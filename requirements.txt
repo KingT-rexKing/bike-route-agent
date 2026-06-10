@@ -1,0 +1,7 @@
+anthropic>=0.40.0
+streamlit>=1.35.0
+folium>=0.17.0
+streamlit-folium>=0.22.0
+requests>=2.32.0
+python-dotenv>=1.0.0
+polyline>=2.0.0

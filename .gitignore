@@ -1,0 +1,20 @@
+# 仮想環境
+.venv/
+
+# 環境変数（APIキーが含まれるため必ずignoreする）
+.env
+
+# Pythonキャッシュ
+__pycache__/
+*.pyc
+*.pyo
+
+# テスト用スクリプト
+test_*.py
+
+# IDEの設定
+.idea/
+.vscode/
+
+# Streamlitキャッシュ
+.streamlit/cache/

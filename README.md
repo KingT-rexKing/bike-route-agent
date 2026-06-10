@@ -1,0 +1,90 @@
+# 🏍️ バイクルート AI プランナー
+
+125cc / 50cc バイク専用の **下道限定ツーリングプラン自動生成 Agent**
+
+Claude AI（claude-haiku-4-5）が観光スポット・飲食店・ガソリンスタンドを沿道で自動検索し、  
+時間配分アルゴリズムで厳密なタイムラインを生成します。
+
+---
+
+## デモ
+
+| 入力 | 出力 |
+|------|------|
+| 出発地・目的地・時間・排量 | 下道ルート + 時間表 + 地図 |
+
+---
+
+## 特徴
+
+- **下道限定ルート** — OSRMの `cycling` プロファイルで高速・自動車専用道を自動回避
+- **時間配分アルゴリズム** — 移動時間・バッファ・食事を差し引いて景点数を動的計算
+- **沿道POI自動検索** — OpenStreetMap (Overpass API) で景点・飲食店・GSを無料取得
+- **50cc / 125cc 対応** — 排量別の速度設定（28km/h / 45km/h）
+
+---
+
+## アーキテクチャ
+
+```
+【Step 1】Nominatim   地名 → 緯度経度
+【Step 2】OSRM        下道ルート + 距離取得
+【Step 3】Pure Python  時間配分アルゴリズム（コア）
+【Step 4】Overpass API 沿道POI検索
+【Step 5】Claude AI    Markdownプラン生成
+```
+
+> **設計思想**: 確実に順番通りに実行すべき処理（ルート取得・時間計算）はPythonで直接呼び出し、  
+> AIには「文章を読む・書く」という得意な部分だけを担当させる。
+
+---
+
+## ファイル構成
+
+```
+├── app.py        # Streamlit UI
+├── agent.py      # Agentメインロジック（5ステップパイプライン）
+├── tools.py      # 外部APIのTool関数 + Claude tool定義
+├── config.py     # 設定値（速度・時間パラメータ・道路設定）
+└── requirements.txt
+```
+
+---
+
+## セットアップ
+
+```bash
+# 1. 仮想環境を作成
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+# source .venv/bin/activate  # Mac/Linux
+
+# 2. 依存パッケージをインストール
+pip install -r requirements.txt
+
+# 3. APIキーを設定
+cp .env.example .env
+# .env を開いて ANTHROPIC_API_KEY を設定
+
+# 4. 起動
+streamlit run app.py
+```
+
+---
+
+## 使用API（全て無料）
+
+| API | 用途 |
+|-----|------|
+| [Nominatim](https://nominatim.org/) | 地名 → 緯度経度 |
+| [OSRM](https://project-osrm.org/) | 下道ルーティング |
+| [Overpass API](https://overpass-api.de/) | POI検索（OSMデータ） |
+| [Anthropic API](https://www.anthropic.com/) | AI文章生成（要APIキー） |
+
+---
+
+## 技術スタック
+
+- **AI**: Claude Haiku 4.5（Anthropic）
+- **フロント**: Streamlit + Folium
+- **言語**: Python 3.11+
