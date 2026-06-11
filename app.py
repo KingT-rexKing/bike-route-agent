@@ -2,6 +2,8 @@
 # app.py  ―  フロントエンド（UI）
 # =============================================
 
+import urllib.parse
+import requests
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -15,377 +17,323 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── カスタムCSS（道路・バイクテーマ） ────────────────────────────
+# ── Wikipedia サムネイル取得 ─────────────────────────────────────
+_THUMB_CACHE: dict = {}
+
+def fetch_wiki_thumb(name: str):
+    """スポット名でWikipedia日本語版の代表画像URLを取得する"""
+    if name in _THUMB_CACHE:
+        return _THUMB_CACHE[name]
+    try:
+        r = requests.get(
+            "https://ja.wikipedia.org/w/api.php",
+            params={
+                "action": "query",
+                "titles": name,
+                "prop": "pageimages",
+                "format": "json",
+                "pithumbsize": 160,
+            },
+            headers={"User-Agent": "BikeRouteAgent/1.0"},
+            timeout=4,
+        )
+        pages = r.json().get("query", {}).get("pages", {})
+        for p in pages.values():
+            src = p.get("thumbnail", {}).get("source")
+            if src:
+                _THUMB_CACHE[name] = src
+                return src
+    except Exception:
+        pass
+    _THUMB_CACHE[name] = None
+    return None
+
+
+# ── カスタムCSS ────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* ── Google Fonts ── */
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&family=Noto+Sans+JP:wght@400;700&display=swap');
 
-/* ── 道路アニメーション背景 ── */
-@keyframes road-scroll {
-    0%   { background-position: center 0%; }
-    100% { background-position: center 100%; }
+/* ── 全体背景を透明にしてスライドショーを見せる ── */
+.stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stHeader"] {
+    background: transparent !important;
 }
-@keyframes lane-scroll {
-    0%   { transform: translateY(-100%); }
-    100% { transform: translateY(100vh); }
+[data-testid="stSidebar"] {
+    background: rgba(8,8,8,0.88) !important;
+    border-right: 1px solid rgba(255,107,0,0.3) !important;
+    backdrop-filter: blur(16px);
 }
+
+/* ── 背景スライド ── */
+.bg-slide {
+    position: fixed;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    opacity: 0;
+    transition: opacity 2s ease-in-out;
+    z-index: -10;
+}
+.bg-slide::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.62);
+}
+
+/* ── アニメーション ── */
 @keyframes fade-in {
-    from { opacity: 0; transform: translateY(20px); }
+    from { opacity: 0; transform: translateY(16px); }
     to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes pulse-glow {
-    0%, 100% { box-shadow: 0 0 20px rgba(255,107,0,0.4); }
-    50%       { box-shadow: 0 0 40px rgba(255,107,0,0.8), 0 0 60px rgba(255,107,0,0.3); }
+    0%,100% { box-shadow: 0 0 18px rgba(255,107,0,0.4); }
+    50%      { box-shadow: 0 0 38px rgba(255,107,0,0.85), 0 0 60px rgba(255,107,0,0.3); }
 }
-@keyframes slide-indicator {
-    0%   { left: -100%; }
-    50%  { left: 100%; }
-    100% { left: 100%; }
+@keyframes moto-ride {
+    0%   { left: -6%; }
+    100% { left: 104%; }
 }
-
-/* ── 全体背景（アスファルト道路） ── */
-.stApp {
-    background:
-        repeating-linear-gradient(
-            180deg,
-            transparent 0px,
-            transparent 60px,
-            rgba(255,255,255,0.03) 60px,
-            rgba(255,255,255,0.03) 62px
-        ),
-        linear-gradient(180deg,
-            #0d0d0d 0%,
-            #1a1a1a 30%,
-            #222222 60%,
-            #1a1a1a 100%
-        );
-    background-size: 100% 120px, 100% 100%;
-    animation: road-scroll 8s linear infinite;
-    min-height: 100vh;
+@keyframes road-dash {
+    0%   { background-position: 0 0; }
+    100% { background-position: 80px 0; }
 }
 
-/* ── サイドバー ── */
-[data-testid="stSidebar"] {
-    background: rgba(10, 10, 10, 0.92) !important;
-    border-right: 1px solid rgba(255,107,0,0.3) !important;
-    backdrop-filter: blur(20px);
-}
-[data-testid="stSidebar"] > div {
-    padding-top: 1rem;
-}
-
-/* ── メインコンテンツ ── */
-.main .block-container {
-    padding-top: 1rem;
-    max-width: 1200px;
-}
+/* ── レイアウト ── */
+.main .block-container { padding-top: 1rem; max-width: 1200px; }
 
 /* ── ヒーローヘッダー ── */
 .hero-header {
     text-align: center;
-    padding: 2.5rem 1rem 2rem;
+    padding: 2.2rem 1rem 1.8rem;
     animation: fade-in 0.8s ease-out;
-    position: relative;
-    overflow: hidden;
-}
-.hero-header::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: linear-gradient(135deg,
-        rgba(255,107,0,0.08) 0%,
-        transparent 50%,
-        rgba(255,107,0,0.05) 100%);
-    border-radius: 16px;
-    pointer-events: none;
 }
 .hero-title {
     font-family: 'Bebas Neue', sans-serif;
-    font-size: clamp(2.5rem, 6vw, 4.5rem);
+    font-size: clamp(2.8rem, 7vw, 5rem);
     letter-spacing: 0.08em;
-    background: linear-gradient(135deg, #FF6B00 0%, #FFB347 50%, #FF6B00 100%);
+    background: linear-gradient(135deg, #FF6B00, #FFB347, #FF6B00);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    text-shadow: none;
-    margin: 0;
-    line-height: 1;
+    margin: 0; line-height: 1;
 }
 .hero-sub {
     font-family: 'Rajdhani', 'Noto Sans JP', sans-serif;
-    font-size: 1rem;
+    font-size: 0.95rem;
     color: rgba(255,255,255,0.55);
     letter-spacing: 0.2em;
     margin-top: 0.5rem;
     text-transform: uppercase;
 }
 .hero-divider {
-    width: 80px;
-    height: 3px;
+    width: 80px; height: 3px;
     background: linear-gradient(90deg, transparent, #FF6B00, transparent);
-    margin: 1rem auto 0;
-    border-radius: 2px;
+    margin: 0.8rem auto 0; border-radius: 2px;
 }
-
-/* ── 道路ラインデコレーション ── */
-.road-lines {
-    display: flex;
-    justify-content: center;
-    gap: 8px;
-    margin: 0.8rem 0;
-}
-.road-line {
-    width: 40px;
-    height: 4px;
-    background: #FF6B00;
-    border-radius: 2px;
-    opacity: 0.7;
-}
-.road-line:nth-child(2) { opacity: 0.4; width: 20px; }
+.road-lines { display: flex; justify-content: center; gap: 8px; margin: 0.6rem 0; }
+.road-line  { width: 40px; height: 4px; background: #FF6B00; border-radius: 2px; opacity: 0.7; }
+.road-line:nth-child(2) { opacity: 0.4; width: 22px; }
 .road-line:nth-child(3) { opacity: 0.2; width: 10px; }
 
 /* ── サイドバーセクションタイトル ── */
 .sidebar-title {
     font-family: 'Rajdhani', sans-serif;
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     letter-spacing: 0.25em;
     color: #FF6B00;
     text-transform: uppercase;
     margin: 1.2rem 0 0.4rem;
-    padding-left: 2px;
 }
 
 /* ── 入力フィールド ── */
 [data-testid="stTextInput"] input {
-    background: rgba(255,255,255,0.05) !important;
+    background: rgba(255,255,255,0.06) !important;
     border: 1px solid rgba(255,107,0,0.25) !important;
     border-radius: 8px !important;
-    color: #ffffff !important;
-    font-family: 'Noto Sans JP', sans-serif !important;
-    transition: border-color 0.2s, box-shadow 0.2s;
+    color: #fff !important;
+    transition: border-color .2s, box-shadow .2s;
 }
 [data-testid="stTextInput"] input:focus {
-    border-color: rgba(255,107,0,0.7) !important;
-    box-shadow: 0 0 0 2px rgba(255,107,0,0.15) !important;
+    border-color: rgba(255,107,0,.7) !important;
+    box-shadow: 0 0 0 2px rgba(255,107,0,.15) !important;
 }
-[data-testid="stTextInput"] label {
-    color: rgba(255,255,255,0.7) !important;
-    font-size: 0.85rem !important;
-}
+[data-testid="stTextInput"] label { color: rgba(255,255,255,.65) !important; font-size:.85rem !important; }
+[data-testid="stRadio"] label,
+[data-testid="stCheckbox"] label { color: rgba(255,255,255,.8) !important; }
 
-/* ── ラジオボタン ── */
-[data-testid="stRadio"] label {
-    color: rgba(255,255,255,0.8) !important;
-}
-[data-testid="stRadio"] [data-testid="stMarkdownContainer"] p {
-    color: rgba(255,255,255,0.8) !important;
-}
-
-/* ── チェックボックス ── */
-[data-testid="stCheckbox"] label {
-    color: rgba(255,255,255,0.8) !important;
-}
-
-/* ── 生成ボタン ── */
+/* ── ボタン ── */
 [data-testid="stBaseButton-primary"] {
     background: linear-gradient(135deg, #FF6B00, #e55a00) !important;
-    border: none !important;
-    border-radius: 10px !important;
+    border: none !important; border-radius: 10px !important;
     font-family: 'Rajdhani', sans-serif !important;
-    font-size: 1.1rem !important;
-    font-weight: 700 !important;
-    letter-spacing: 0.1em !important;
-    color: #ffffff !important;
+    font-size: 1.1rem !important; font-weight: 700 !important;
+    letter-spacing: .1em !important; color: #fff !important;
     animation: pulse-glow 2.5s ease-in-out infinite;
-    transition: transform 0.1s;
 }
-[data-testid="stBaseButton-primary"]:hover {
-    transform: translateY(-2px);
-    background: linear-gradient(135deg, #FF7F00, #FF6B00) !important;
-}
-[data-testid="stBaseButton-primary"]:active {
-    transform: translateY(0);
+[data-testid="stBaseButton-primary"]:hover { transform: translateY(-2px); }
+[data-testid="stBaseButton-secondary"] {
+    background: rgba(255,255,255,.06) !important;
+    border: 1px solid rgba(255,107,0,.3) !important;
+    border-radius: 8px !important; color: rgba(255,255,255,.8) !important;
+    font-family: 'Rajdhani', sans-serif !important; font-weight: 600 !important;
 }
 
 /* ── KPIカード ── */
 .kpi-card {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,107,0,0.2);
-    border-radius: 12px;
-    padding: 1.2rem 1.5rem;
-    text-align: center;
-    transition: border-color 0.2s, transform 0.2s;
-    animation: fade-in 0.6s ease-out;
+    background: rgba(0,0,0,.5);
+    border: 1px solid rgba(255,107,0,.22);
+    border-radius: 12px; padding: 1.2rem 1.5rem; text-align: center;
+    backdrop-filter: blur(8px);
+    transition: border-color .2s, transform .2s;
+    animation: fade-in .6s ease-out;
 }
-.kpi-card:hover {
-    border-color: rgba(255,107,0,0.5);
-    transform: translateY(-3px);
-}
-.kpi-label {
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 0.7rem;
-    letter-spacing: 0.2em;
-    color: rgba(255,255,255,0.45);
-    text-transform: uppercase;
-    margin-bottom: 0.3rem;
-}
-.kpi-value {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 2.2rem;
-    color: #FF6B00;
-    line-height: 1;
-}
-.kpi-unit {
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 0.85rem;
-    color: rgba(255,255,255,0.4);
-    margin-top: 0.2rem;
-}
+.kpi-card:hover { border-color: rgba(255,107,0,.5); transform: translateY(-3px); }
+.kpi-label { font-family:'Rajdhani',sans-serif; font-size:.68rem; letter-spacing:.2em; color:rgba(255,255,255,.45); text-transform:uppercase; margin-bottom:.3rem; }
+.kpi-value { font-family:'Bebas Neue',sans-serif; font-size:2.2rem; color:#FF6B00; line-height:1; }
+.kpi-unit  { font-family:'Rajdhani',sans-serif; font-size:.85rem; color:rgba(255,255,255,.4); margin-top:.2rem; }
 
 /* ── タブ ── */
 [data-testid="stTabs"] [role="tab"] {
-    font-family: 'Rajdhani', sans-serif !important;
-    font-size: 1rem !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.05em !important;
-    color: rgba(255,255,255,0.55) !important;
+    font-family:'Rajdhani',sans-serif !important; font-size:1rem !important;
+    font-weight:600 !important; color:rgba(255,255,255,.55) !important;
 }
 [data-testid="stTabs"] [role="tab"][aria-selected="true"] {
-    color: #FF6B00 !important;
-    border-bottom-color: #FF6B00 !important;
+    color:#FF6B00 !important; border-bottom-color:#FF6B00 !important;
 }
 
-/* ── プランテキストエリア ── */
-[data-testid="stMarkdownContainer"] {
-    color: rgba(255,255,255,0.85) !important;
-}
+/* ── Markdownテキスト ── */
+[data-testid="stMarkdownContainer"] { color: rgba(255,255,255,.85) !important; }
 [data-testid="stMarkdownContainer"] h2 {
-    color: #FF6B00 !important;
-    font-family: 'Rajdhani', sans-serif !important;
-    font-size: 1.4rem !important;
-    border-bottom: 1px solid rgba(255,107,0,0.2);
-    padding-bottom: 0.3rem;
-    margin-top: 1.5rem !important;
+    color:#FF6B00 !important; font-family:'Rajdhani',sans-serif !important;
+    font-size:1.4rem !important; border-bottom:1px solid rgba(255,107,0,.2);
+    padding-bottom:.3rem; margin-top:1.5rem !important;
 }
 [data-testid="stMarkdownContainer"] table {
-    background: rgba(255,255,255,0.03) !important;
-    border-collapse: collapse !important;
-    width: 100% !important;
-    border-radius: 8px !important;
-    overflow: hidden !important;
+    background:rgba(255,255,255,.03) !important; border-collapse:collapse !important;
+    width:100% !important;
 }
 [data-testid="stMarkdownContainer"] th {
-    background: rgba(255,107,0,0.15) !important;
-    color: #FF6B00 !important;
-    font-family: 'Rajdhani', sans-serif !important;
-    letter-spacing: 0.05em !important;
-    padding: 0.7rem 1rem !important;
-    border: 1px solid rgba(255,107,0,0.15) !important;
+    background:rgba(255,107,0,.15) !important; color:#FF6B00 !important;
+    font-family:'Rajdhani',sans-serif !important;
+    padding:.7rem 1rem !important; border:1px solid rgba(255,107,0,.15) !important;
 }
 [data-testid="stMarkdownContainer"] td {
-    padding: 0.6rem 1rem !important;
-    border: 1px solid rgba(255,255,255,0.06) !important;
-    color: rgba(255,255,255,0.8) !important;
+    padding:.6rem 1rem !important; border:1px solid rgba(255,255,255,.06) !important;
+    color:rgba(255,255,255,.8) !important;
 }
-[data-testid="stMarkdownContainer"] tr:hover td {
-    background: rgba(255,107,0,0.05) !important;
-}
+[data-testid="stMarkdownContainer"] tr:hover td { background:rgba(255,107,0,.05) !important; }
 
-/* ── 進捗ログ ── */
-[data-testid="stAlert"] {
-    background: rgba(255,107,0,0.08) !important;
-    border: 1px solid rgba(255,107,0,0.25) !important;
-    border-radius: 10px !important;
-    color: rgba(255,255,255,0.8) !important;
-}
-
-/* ── ダウンロードボタン ── */
-[data-testid="stBaseButton-secondary"] {
-    background: rgba(255,255,255,0.06) !important;
-    border: 1px solid rgba(255,107,0,0.3) !important;
-    border-radius: 8px !important;
-    color: rgba(255,255,255,0.8) !important;
-    font-family: 'Rajdhani', sans-serif !important;
-    font-weight: 600 !important;
-    transition: background 0.2s, border-color 0.2s;
-}
-[data-testid="stBaseButton-secondary"]:hover {
-    background: rgba(255,107,0,0.12) !important;
-    border-color: rgba(255,107,0,0.6) !important;
-}
-
-/* ── メトリクスカード（Streamlit標準） ── */
-[data-testid="stMetric"] {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,107,0,0.15);
-    border-radius: 12px;
-    padding: 1rem !important;
-}
-[data-testid="stMetricLabel"] {
-    color: rgba(255,255,255,0.5) !important;
-    font-family: 'Rajdhani', sans-serif !important;
-    font-size: 0.75rem !important;
-    letter-spacing: 0.15em !important;
-    text-transform: uppercase !important;
-}
-[data-testid="stMetricValue"] {
-    color: #FF6B00 !important;
-    font-family: 'Bebas Neue', sans-serif !important;
-    font-size: 2rem !important;
-}
-
-/* ── フィーチャーカード（トップ3枚） ── */
-.feature-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.08);
+/* ── バイク走行ローダー ── */
+.moto-loader {
+    position: relative; width: 100%; height: 92px;
+    overflow: hidden;
+    background: rgba(0,0,0,.45);
     border-radius: 14px;
-    padding: 1.5rem;
-    height: 100%;
-    transition: border-color 0.25s, transform 0.25s;
-    animation: fade-in 0.8s ease-out;
+    border: 1px solid rgba(255,107,0,.2);
+    backdrop-filter: blur(8px);
+    margin: 1rem 0;
 }
-.feature-card:hover {
-    border-color: rgba(255,107,0,0.4);
-    transform: translateY(-4px);
-}
-.feature-icon {
-    font-size: 2rem;
-    margin-bottom: 0.7rem;
-}
-.feature-title {
+.moto-label {
+    position: absolute; top: 13px; left: 0; right: 0;
+    text-align: center;
     font-family: 'Rajdhani', sans-serif;
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #FF6B00;
-    margin-bottom: 0.4rem;
-    letter-spacing: 0.05em;
+    font-size: .92rem; letter-spacing: .15em;
+    color: rgba(255,255,255,.65);
 }
-.feature-desc {
-    font-family: 'Noto Sans JP', sans-serif;
-    font-size: 0.82rem;
-    color: rgba(255,255,255,0.5);
-    line-height: 1.6;
+.moto-track {
+    position: absolute; bottom: 28px; left: 0; right: 0; height: 3px;
+    background: repeating-linear-gradient(90deg,
+        rgba(255,107,0,.7) 0px, rgba(255,107,0,.7) 24px,
+        transparent 24px, transparent 48px);
+    animation: road-dash .35s linear infinite;
+}
+.moto-bike {
+    position: absolute; bottom: 20px;
+    font-size: 2rem; line-height: 1;
+    filter: drop-shadow(0 0 10px rgba(255,107,0,.9));
+    animation: moto-ride 2.8s linear infinite;
 }
 
-/* ── スクロールバー ── */
+/* ── 写真付きスポットテーブル ── */
+.spot-table { width:100%; border-collapse:collapse; }
+.spot-table th {
+    background: rgba(255,107,0,.18); color: #FF6B00;
+    font-family: 'Rajdhani', sans-serif; letter-spacing:.08em;
+    padding: .7rem .9rem; border-bottom: 1px solid rgba(255,107,0,.2);
+    font-size: .9rem; text-align: left;
+}
+.spot-table td {
+    padding: .65rem .9rem; border-bottom: 1px solid rgba(255,255,255,.06);
+    color: rgba(255,255,255,.82); vertical-align: middle;
+}
+.spot-table tr:hover td { background: rgba(255,107,0,.05); }
+.spot-time { font-family:'Bebas Neue',sans-serif; font-size:1.05rem; color:#FFB347; white-space:nowrap; }
+.spot-link { color:#FF6B00 !important; text-decoration:none; font-weight:700;
+             font-family:'Noto Sans JP',sans-serif; }
+.spot-link:hover { text-decoration:underline; color:#FFB347 !important; }
+.spot-thumb {
+    width:80px; height:56px; object-fit:cover; border-radius:6px;
+    border:1px solid rgba(255,107,0,.3); display:block;
+}
+.spot-cat  { font-size:.73rem; color:rgba(255,255,255,.42); margin-top:2px; }
+.spot-stay { font-family:'Rajdhani',sans-serif; color:#FF6B00; font-weight:600; }
+.go-row td { color:rgba(255,255,255,.3) !important; font-style:italic; font-size:.78rem; }
+
+/* ── フィーチャーカード ── */
+.feature-card {
+    background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 14px; padding: 1.5rem; backdrop-filter: blur(8px);
+    transition: border-color .25s, transform .25s; animation: fade-in .8s ease-out;
+}
+.feature-card:hover { border-color: rgba(255,107,0,.4); transform: translateY(-4px); }
+.feature-icon  { font-size: 2rem; margin-bottom: .7rem; }
+.feature-title { font-family:'Rajdhani',sans-serif; font-size:1.1rem; font-weight:700; color:#FF6B00; margin-bottom:.4rem; }
+.feature-desc  { font-family:'Noto Sans JP',sans-serif; font-size:.82rem; color:rgba(255,255,255,.5); line-height:1.6; }
+
+/* ── スクロールバー / その他 ── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: #111; }
-::-webkit-scrollbar-thumb {
-    background: rgba(255,107,0,0.4);
-    border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-    background: rgba(255,107,0,0.7);
-}
-
-/* ── セパレーター ── */
-hr {
-    border-color: rgba(255,107,0,0.15) !important;
-    margin: 1.5rem 0 !important;
-}
+::-webkit-scrollbar-thumb { background: rgba(255,107,0,.4); border-radius: 3px; }
+hr { border-color: rgba(255,107,0,.15) !important; margin: 1.5rem 0 !important; }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ── 背景スライドショー（Unsplash 実写真 4枚） ─────────────────────
+SLIDES = [
+    "https://source.unsplash.com/1920x1080/?motorcycle,japan,road",
+    "https://source.unsplash.com/1920x1080/?mountain,road,japan,scenic",
+    "https://source.unsplash.com/1920x1080/?coastal,highway,japan",
+    "https://source.unsplash.com/1920x1080/?motorcycle,touring,sunset",
+]
+slides_html = "".join(
+    f'<div class="bg-slide" id="bgslide{i}" '
+    f'style="background-image:url(\'{u}\')"></div>'
+    for i, u in enumerate(SLIDES)
+)
+st.markdown(f"""
+{slides_html}
+<script>
+(function() {{
+    var idx = 0;
+    function init() {{
+        var slides = document.querySelectorAll('.bg-slide');
+        if (!slides.length) {{ setTimeout(init, 600); return; }}
+        slides[0].style.opacity = '1';
+        setInterval(function() {{
+            slides[idx].style.opacity = '0';
+            idx = (idx + 1) % slides.length;
+            slides[idx].style.opacity = '1';
+        }}, 5000);
+    }}
+    setTimeout(init, 800);
+}})();
+</script>
+""", unsafe_allow_html=True)
+
 
 # ── ヒーローヘッダー ────────────────────────────────────────────
 st.markdown("""
@@ -401,11 +349,14 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+
 # ── サイドバー ────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown('<div class="sidebar-title">📍 出発地 / 目的地</div>', unsafe_allow_html=True)
-    origin      = st.text_input("出発地", value="東京都新宿区", label_visibility="collapsed", placeholder="例: 東京都新宿区")
-    destination = st.text_input("目的地", value="箱根町",     label_visibility="collapsed", placeholder="例: 箱根町")
+    origin      = st.text_input("出発地", value="東京都新宿区", label_visibility="collapsed",
+                                placeholder="例: 東京都新宿区")
+    destination = st.text_input("目的地", value="箱根町", label_visibility="collapsed",
+                                placeholder="例: 箱根町")
 
     st.markdown('<div class="sidebar-title">🕐 出発 / 帰着</div>', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
@@ -415,12 +366,16 @@ with st.sidebar:
         end_time = st.text_input("帰着", value="17:00", label_visibility="collapsed")
 
     st.markdown('<div class="sidebar-title">🔧 排量</div>', unsafe_allow_html=True)
-    engine_cc = st.radio(
-        "排量",
-        options=["125cc", "50cc"],
+    engine_cc = st.radio("排量", options=["125cc", "50cc"],
+                         label_visibility="collapsed", horizontal=True)
+
+    st.markdown('<div class="sidebar-title">🎯 旅のスタイル</div>', unsafe_allow_html=True)
+    travel_style = st.radio(
+        "旅のスタイル",
+        options=["お任せ", "風景", "人文"],
         label_visibility="collapsed",
         horizontal=True,
-        help="50cc = 原付一種（30km/h制限）\n125cc = 原付二種（60km/h制限）",
+        help="風景 = 自然・絶景優先 / 人文 = 博物館・史跡優先 / お任せ = バランス型",
     )
 
     st.markdown('<div class="sidebar-title">⚙️ オプション</div>', unsafe_allow_html=True)
@@ -430,62 +385,66 @@ with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
     run_btn = st.button("✦ プランを生成する", type="primary", use_container_width=True)
 
+
 # ── メインエリア ──────────────────────────────────────────────────
 if run_btn:
-    # 入力チェック
     if not origin or not destination:
         st.error("出発地と目的地を入力してください")
         st.stop()
 
-    # 進捗ログ
-    status_area  = st.empty()
+    # バイク走行アニメーション
+    loader_ph = st.empty()
+    loader_ph.markdown("""
+    <div class="moto-loader">
+        <div class="moto-label">⚡ AI がルートを解析中... しばらくお待ちください</div>
+        <div class="moto-track"></div>
+        <div class="moto-bike">🏍️</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    status_ph    = st.empty()
     log_messages = []
 
     def show_status(msg):
         log_messages.append(msg)
-        status_area.info("\n\n".join(log_messages[-4:]))
+        status_ph.info("\n\n".join(log_messages[-4:]))
 
-    with st.spinner(""):
-        st.markdown("""
-        <div style="text-align:center; padding:1rem; color:rgba(255,107,0,0.8);
-                    font-family:'Rajdhani',sans-serif; font-size:1.1rem; letter-spacing:0.1em;">
-            ⚡ AI がルートを解析中...
-        </div>
-        """, unsafe_allow_html=True)
+    try:
+        result = run_agent(
+            origin=origin,
+            destination=destination,
+            start_time=start_time,
+            end_time=end_time,
+            engine_cc=engine_cc,
+            want_meal=want_meal,
+            want_gas=want_gas,
+            travel_style=travel_style,
+            status_cb=show_status,
+        )
+    except Exception as e:
+        loader_ph.empty()
+        status_ph.empty()
+        st.error(f"エラー: {e}")
+        st.stop()
 
-        try:
-            result = run_agent(
-                origin=origin,
-                destination=destination,
-                start_time=start_time,
-                end_time=end_time,
-                engine_cc=engine_cc,
-                want_meal=want_meal,
-                want_gas=want_gas,
-                status_cb=show_status,
-            )
-        except Exception as e:
-            st.error(f"エラー: {e}")
-            st.stop()
+    loader_ph.empty()
+    status_ph.empty()
 
-    status_area.empty()
-
-    route    = result.get("route") or {}
+    route    = result.get("route")       or {}
     budget   = result.get("time_budget") or {}
-    timeline = result.get("timeline") or []
-    geometry = result.get("geometry") or []
+    timeline = result.get("timeline")    or []
+    geometry = result.get("geometry")    or []
     spots    = result.get("spots_for_map") or []
 
     # ── KPIカード ──
     st.markdown("<br>", unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
-    cards = [
-        (c1, "DISTANCE",   f"{route.get('distance_km', '—')}",  "km"),
-        (c2, "RIDING TIME", f"{budget.get('riding_min', '—')}",  "分"),
-        (c3, "SPOTS",       f"{budget.get('n_spots', 0)}",       "箇所"),
-        (c4, "MEALS",       f"{budget.get('n_meals', 0)}",       "回"),
-    ]
-    for col, label, value, unit in cards:
+    for col, label, value, unit in [
+        (c1, "DISTANCE",    route.get("distance_km", "—"), "km"),
+        (c2, "RIDING TIME", budget.get("riding_min",  "—"), "分"),
+        (c3, "SPOTS",       budget.get("n_spots",     0),   "箇所"),
+        (c4, "MEALS",       budget.get("n_meals",     0),   "回"),
+    ]:
         with col:
             st.markdown(f"""
             <div class="kpi-card">
@@ -498,12 +457,14 @@ if run_btn:
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ── タブ ──
-    tab_plan, tab_map = st.tabs(["📋 タイムラインプラン", "🗺️ ルート地図"])
+    tab_plan, tab_spots, tab_map = st.tabs(
+        ["📋 プラン概要", "📸 スポット詳細", "🗺️ ルート地図"]
+    )
 
+    # ─── タブ1: AIが生成したMarkdownプラン ───
     with tab_plan:
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown(result.get("plan_text", "プランの生成に失敗しました"))
-
         st.markdown("<br>", unsafe_allow_html=True)
         st.download_button(
             label="📥 Markdownでダウンロード",
@@ -512,6 +473,105 @@ if run_btn:
             mime="text/markdown",
         )
 
+    # ─── タブ2: 写真付きスポット詳細テーブル ───
+    with tab_spots:
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # スポット名 → spot_data の辞書を作る（websiteなどを参照するため）
+        spot_lookup = {s["name"]: s for s in spots}
+
+        # Wikipedia サムネイルをまとめて取得（観光スポットのみ）
+        with st.spinner("📡 スポット画像を取得中..."):
+            thumbs = {}
+            for s in spots:
+                if s.get("category") not in ("gas_station", "restaurant"):
+                    thumbs[s["name"]] = fetch_wiki_thumb(s["name"])
+
+        # カテゴリ → アイコン の対応表
+        cat_icons = {
+            "museum": "🏛️", "viewpoint": "🌄", "historic": "🏯",
+            "castle": "🏯", "ruins": "🏚️", "monument": "🗿",
+            "natural": "🌲", "peak": "⛰️", "waterfall": "💧",
+            "hot_spring": "♨️", "beach": "🏖️", "park": "🌿",
+            "restaurant": "🍜", "cafe": "☕", "gas_station": "⛽",
+            "attraction": "⭐", "artwork": "🎨",
+        }
+
+        # HTMLテーブルを組み立てる
+        rows_html = ""
+        cumulative_km = 0.0
+
+        for entry in timeline:
+            name      = entry.get("name", "")
+            arrive    = entry.get("arrive", "")
+            category  = entry.get("category", "")
+            stay_min  = entry.get("stay_min", 0)
+            dist_km   = entry.get("dist_km", 0)
+            cumulative_km += dist_km
+
+            spot_data = spot_lookup.get(name)
+
+            # 走行中の行（スポットなし）
+            if not spot_data:
+                rows_html += f"""
+                <tr class="go-row">
+                    <td class="spot-time">{arrive}</td>
+                    <td colspan="5">🛣️ 走行中</td>
+                </tr>"""
+                continue
+
+            # 写真セル
+            thumb = thumbs.get(name)
+            thumb_html = (
+                f'<img class="spot-thumb" src="{thumb}" alt="{name}">'
+                if thumb else
+                '<div style="width:80px;height:56px;background:rgba(255,107,0,.08);'
+                'border-radius:6px;border:1px solid rgba(255,107,0,.2);"></div>'
+            )
+
+            # リンク: websiteがあれば公式サイト、なければGoogle検索
+            website = (spot_data or {}).get("website") or ""
+            if website:
+                link_url = website
+            else:
+                link_url = "https://www.google.com/search?q=" + urllib.parse.quote(name)
+
+            cat_icon = cat_icons.get(category, "📍")
+
+            rows_html += f"""
+            <tr>
+                <td><div class="spot-time">{arrive}</div></td>
+                <td>{thumb_html}</td>
+                <td>
+                    <a class="spot-link" href="{link_url}" target="_blank">{name}</a>
+                    <div class="spot-cat">{cat_icon} {category}</div>
+                </td>
+                <td style="color:rgba(255,255,255,.6)">{dist_km} km</td>
+                <td class="spot-stay">{stay_min} 分</td>
+                <td style="color:rgba(255,255,255,.5)">{round(cumulative_km, 1)} km</td>
+            </tr>"""
+
+        st.markdown(f"""
+        <table class="spot-table">
+            <thead>
+                <tr>
+                    <th>時刻</th>
+                    <th>写真</th>
+                    <th>スポット名（クリックで詳細）</th>
+                    <th>走行距離</th>
+                    <th>滞在</th>
+                    <th>累積</th>
+                </tr>
+            </thead>
+            <tbody>{rows_html}</tbody>
+        </table>
+        <p style="margin-top:.8rem;font-size:.73rem;color:rgba(255,255,255,.3);
+                  font-family:'Noto Sans JP',sans-serif;">
+            ※ 写真はWikipedia日本語版から取得。スポット名クリックで公式サイト or Google検索へ移動。
+        </p>
+        """, unsafe_allow_html=True)
+
+    # ─── タブ3: Folium ダーク地図 ───
     with tab_map:
         st.markdown("<br>", unsafe_allow_html=True)
         if geometry:
@@ -520,87 +580,58 @@ if run_btn:
         else:
             center_lat, center_lon = 35.68, 139.76
 
-        # ダークテーマの地図
         m = folium.Map(
             location=[center_lat, center_lon],
             zoom_start=10,
             tiles="CartoDB dark_matter",
         )
-
-        # ルートライン（オレンジ）
         if geometry:
             route_coords = [[c[1], c[0]] for c in geometry]
-            folium.PolyLine(
-                route_coords,
-                color="#FF6B00",
-                weight=4,
-                opacity=0.85,
-                tooltip="下道ルート",
-            ).add_to(m)
+            folium.PolyLine(route_coords, color="#FF6B00", weight=4,
+                            opacity=.85, tooltip="下道ルート").add_to(m)
+            folium.Marker(route_coords[0],
+                          popup=folium.Popup(f"🚩 <b>{origin}</b>", max_width=200),
+                          icon=folium.Icon(color="green", icon="play", prefix="fa")).add_to(m)
+            folium.Marker(route_coords[-1],
+                          popup=folium.Popup(f"🏁 <b>{destination}</b>", max_width=200),
+                          icon=folium.Icon(color="red", icon="flag", prefix="fa")).add_to(m)
 
-            # 出発地マーカー
-            folium.Marker(
-                route_coords[0],
-                popup=folium.Popup(f"🚩 <b>{origin}</b>", max_width=200),
-                icon=folium.Icon(color="green", icon="play", prefix="fa"),
-            ).add_to(m)
-
-            # 目的地マーカー
-            folium.Marker(
-                route_coords[-1],
-                popup=folium.Popup(f"🏁 <b>{destination}</b>", max_width=200),
-                icon=folium.Icon(color="red", icon="flag", prefix="fa"),
-            ).add_to(m)
-
-        # スポットマーカー
-        COLOR_MAP = {
-            "restaurant":  "orange",
-            "gas_station": "lightgray",
-            "museum":      "blue",
-            "viewpoint":   "purple",
-            "castle":      "darkblue",
-        }
-        for i, spot in enumerate(spots):
-            color = COLOR_MAP.get(spot.get("category"), "cadetblue")
+        for spot in spots:
+            fill = {"restaurant": "#FFB347", "gas_station": "#888"}.get(
+                spot.get("category"), "#FF6B00")
             folium.CircleMarker(
                 [spot["lat"], spot["lon"]],
-                radius=8,
-                color="#FF6B00",
-                fill=True,
-                fill_color={"restaurant": "#FFB347", "gas_station": "#888"}.get(spot.get("category"), "#FF6B00"),
-                fill_opacity=0.9,
+                radius=8, color="#FF6B00", fill=True,
+                fill_color=fill, fill_opacity=.9,
                 popup=folium.Popup(
-                    f"<b>{spot['name']}</b><br>{spot.get('category','')}", max_width=200
-                ),
-                tooltip=f"{'⛽' if spot.get('category')=='gas_station' else '🍜' if spot.get('category')=='restaurant' else '🏯'} {spot['name']}",
+                    f"<b>{spot['name']}</b><br>{spot.get('category','')}", max_width=200),
+                tooltip=spot["name"],
             ).add_to(m)
 
         st_folium(m, width="100%", height=520, returned_objects=[])
         st.markdown("""
-        <div style="display:flex; gap:1.5rem; justify-content:center; margin-top:0.8rem;
-                    font-family:'Rajdhani',sans-serif; font-size:0.85rem;
-                    color:rgba(255,255,255,0.5);">
-            <span>🟢 出発地</span>
-            <span>🔴 目的地</span>
+        <div style="display:flex;gap:1.5rem;justify-content:center;margin-top:.8rem;
+                    font-family:'Rajdhani',sans-serif;font-size:.85rem;color:rgba(255,255,255,.5);">
+            <span>🟢 出発地</span><span>🔴 目的地</span>
             <span><span style="color:#FF6B00">●</span> 景点</span>
             <span><span style="color:#FFB347">●</span> 飲食店</span>
             <span><span style="color:#888">●</span> 給油</span>
         </div>
         """, unsafe_allow_html=True)
 
+
 else:
     # ── デフォルト画面（フィーチャーカード） ──
     st.markdown("<br>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
-    features = [
+    for col, icon, title, desc in [
         (c1, "🛣️", "下道限定ルート",
-         "高速・自動車専用道を完全回避。OSRM の cycling プロファイルで50cc/125cc どちらにも対応した安全ルートを生成。"),
-        (c2, "⏱️", "スマート時間配分",
-         "移動時間・バッファ・食事を差し引き、余った時間で何箇所立ち寄れるかをアルゴリズムで自動計算。"),
-        (c3, "🏯", "沿道POI 自動発見",
-         "OpenStreetMap から景点・飲食店・ガソリンスタンドをルート沿い自動検索。APIキー不要・完全無料。"),
-    ]
-    for col, icon, title, desc in features:
+         "高速・自動車専用道を完全回避。OSRM cycling プロファイルで50cc/125cc どちらにも対応した安全ルートを生成。"),
+        (c2, "🎯", "スタイル別おすすめ",
+         "風景派（自然・絶景）か人文派（博物館・史跡）か、好みに合わせてスポットを自動選定。お任せ = バランス型。"),
+        (c3, "📸", "写真＆リンク付き",
+         "Wikipedia画像と公式サイトリンクをタイムラインに自動取得。そのままナビ代わりに使える。"),
+    ]:
         with col:
             st.markdown(f"""
             <div class="feature-card">
@@ -612,13 +643,13 @@ else:
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("""
-    <div style="text-align:center; padding:1.5rem;
-                background:rgba(255,107,0,0.06); border:1px solid rgba(255,107,0,0.2);
-                border-radius:14px; animation: fade-in 1s ease-out;">
-        <div style="font-family:'Rajdhani',sans-serif; font-size:1.1rem;
-                    color:rgba(255,255,255,0.6); letter-spacing:0.1em;">
+    <div style="text-align:center;padding:1.5rem;
+                background:rgba(0,0,0,.5);border:1px solid rgba(255,107,0,.2);
+                border-radius:14px;backdrop-filter:blur(8px);animation:fade-in 1s ease-out;">
+        <div style="font-family:'Rajdhani',sans-serif;font-size:1.1rem;
+                    color:rgba(255,255,255,.6);letter-spacing:.1em;">
             👈 &nbsp; 左のサイドバーで条件を設定して
-            <span style="color:#FF6B00; font-weight:700;">✦ プランを生成する</span>
+            <span style="color:#FF6B00;font-weight:700;">✦ プランを生成する</span>
             を押してください
         </div>
     </div>

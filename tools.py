@@ -64,20 +64,28 @@ def _grid_points(geometry, interval_km):
     return points
 
 
-def _spot_score(tags):
+def _spot_score(tags, travel_style="お任せ"):
     """
     OSMのタグ情報からスポットの「おすすめ度」を0〜1で計算する
-    スコアが高い順に景点を並べるために使う
+    travel_styleによって人文系/自然系のスコアを上げる
     """
-    score = 0.3  # ベーススコア
-    if tags.get("tourism") in ("attraction", "museum", "viewpoint"):
-        score += 0.4
-    if tags.get("historic") in ("castle", "ruins", "monument"):
-        score += 0.35
-    if tags.get("natural") in ("peak", "waterfall", "hot_spring"):
-        score += 0.3
+    score = 0.3
+    if travel_style in ("お任せ", "人文"):
+        if tags.get("tourism") in ("museum", "attraction", "artwork", "gallery"):
+            score += 0.45
+        if tags.get("historic") in ("castle", "ruins", "monument", "temple", "shrine"):
+            score += 0.4
+        if tags.get("amenity") in ("place_of_worship",):
+            score += 0.25
+    if travel_style in ("お任せ", "風景"):
+        if tags.get("tourism") == "viewpoint":
+            score += 0.45
+        if tags.get("natural") in ("peak", "waterfall", "hot_spring", "beach", "cliff"):
+            score += 0.4
+        if tags.get("leisure") in ("park", "nature_reserve"):
+            score += 0.2
     if tags.get("wikipedia") or tags.get("wikidata"):
-        score += 0.15  # Wikipediaに載ってるなら有名スポット
+        score += 0.15
     return min(score, 1.0)
 
 
@@ -153,30 +161,31 @@ def get_route(origin_lat, origin_lon, dest_lat, dest_lon, engine_cc):
 # Tool 3: 観光スポット検索
 # -----------------------------------------------
 
-def search_spots(geometry, n_spots):
+def search_spots(geometry, n_spots, travel_style="お任せ"):
     """
     ルート沿いの観光スポットを検索する
-    使うAPI: Overpass API（OpenStreetMapのデータを検索できる無料API）
-
-    やり方:
-      1. ルートを15kmおきに分割してグリッド点を作る
-      2. 各グリッド点から半径3km以内のスポットを検索
-      3. スコアが高い順に並べて上位n_spots件を返す
+    travel_styleで人文系（博物館・史跡）か自然系（絶景・峠）かを切り替える
     """
     grid = _grid_points(geometry, config.GRID_INTERVAL_KM)
     radius = config.SEARCH_RADIUS_M
 
-    # Overpass QL（Overpass API専用のクエリ言語）を組み立てる
     search_blocks = []
     for lat, lon in grid:
-        search_blocks.append(f'node["tourism"](around:{radius},{lat},{lon});')
-        search_blocks.append(f'node["historic"](around:{radius},{lat},{lon});')
-        search_blocks.append(f'node["natural"~"peak|waterfall|hot_spring"](around:{radius},{lat},{lon});')
+        if travel_style in ("お任せ", "人文"):
+            search_blocks.append(f'node["tourism"~"museum|attraction|artwork|gallery"](around:{radius},{lat},{lon});')
+            search_blocks.append(f'node["historic"](around:{radius},{lat},{lon});')
+            search_blocks.append(f'node["amenity"~"place_of_worship"](around:{radius},{lat},{lon});')
+        if travel_style in ("お任せ", "風景"):
+            search_blocks.append(f'node["tourism"~"viewpoint"](around:{radius},{lat},{lon});')
+            search_blocks.append(f'node["natural"~"peak|waterfall|hot_spring|beach|cliff"](around:{radius},{lat},{lon});')
+            search_blocks.append(f'node["leisure"~"park|nature_reserve"](around:{radius},{lat},{lon});')
+
+    if not search_blocks:
+        return {"spots": []}
 
     query = f'[out:json][timeout:30];({"".join(search_blocks)});out;'
     elements = _overpass_query(query, timeout=35)
 
-    # 重複を除いてスポット一覧を作る
     seen_names = set()
     spots = []
     for el in elements:
@@ -195,6 +204,7 @@ def search_spots(geometry, n_spots):
             tags.get("tourism")
             or tags.get("historic")
             or tags.get("natural")
+            or tags.get("leisure")
             or "スポット"
         )
 
@@ -203,12 +213,12 @@ def search_spots(geometry, n_spots):
             "category": category,
             "lat": lat,
             "lon": lon,
-            "score": _spot_score(tags),
-            "website": tags.get("website", ""),
+            "score": _spot_score(tags, travel_style),
+            "website": tags.get("website") or tags.get("contact:website") or "",
+            "wikipedia": tags.get("wikipedia", ""),
             "opening_hours": tags.get("opening_hours", ""),
         })
 
-    # スコアが高い順に並べて上位n件を返す
     spots.sort(key=lambda x: x["score"], reverse=True)
     return {"spots": spots[:n_spots]}
 

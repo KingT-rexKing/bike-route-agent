@@ -138,18 +138,16 @@ def build_timeline(start_time, stops, geometry):
 # Step 4: AIツールループ（POI検索のみ担当）
 # -----------------------------------------------
 
-def search_pois_direct(geometry, budget, want_meal, want_gas, log):
+def search_pois_direct(geometry, budget, want_meal, want_gas, log, travel_style="お任せ"):
     """
     Pythonで直接POI検索APIを呼ぶ。
     AIのツールループを使わずに確実に実行する。
-    （AIにgeometryを渡してツール呼び出しさせると
-      座標が切り詰められてうまく動かないため直接呼び出しに変更）
     """
     all_stops = []
 
     if budget["n_spots"] > 0:
         log("🏯 観光スポットを検索中...")
-        result = tools.search_spots(geometry, budget["n_spots"])
+        result = tools.search_spots(geometry, budget["n_spots"], travel_style)
         spots = result.get("spots", [])
         all_stops.extend(spots)
         log(f"   → {len(spots)} 件発見")
@@ -176,7 +174,7 @@ def search_pois_direct(geometry, budget, want_meal, want_gas, log):
 # -----------------------------------------------
 
 def run_agent(origin, destination, start_time, end_time,
-              engine_cc, want_meal, want_gas, status_cb=None):
+              engine_cc, want_meal, want_gas, travel_style="お任せ", status_cb=None):
     """全体を動かすメイン関数"""
 
     def log(msg):
@@ -236,7 +234,7 @@ def run_agent(origin, destination, start_time, end_time,
     log("🔍 Step4: 沿道スポットを検索中...")
 
     all_stops = search_pois_direct(
-        route["geometry"], budget, want_meal, want_gas, log
+        route["geometry"], budget, want_meal, want_gas, log, travel_style
     )
     log(f"   合計 {len(all_stops)} 件のスポットを収集")
 
@@ -260,6 +258,7 @@ def run_agent(origin, destination, start_time, end_time,
     # =============================================
     log("📋 Step5: プランを生成中...")
 
+    style_label = {"風景": "自然・絶景スポット優先", "人文": "博物館・史跡優先", "お任せ": "バランス型"}.get(travel_style, "")
     plan_prompt = f"""
 以下のデータを使ってツーリングプランをMarkdown形式で書いてください。
 
@@ -269,6 +268,7 @@ def run_agent(origin, destination, start_time, end_time,
 - 排量: {engine_cc}（高速道路は走れない）
 - 総距離: {route['distance_km']} km
 - 純移動時間: {budget['riding_min']} 分
+- 旅のスタイル: {travel_style}（{style_label}）
 
 【タイムラインデータ】
 ```json
@@ -277,10 +277,10 @@ def run_agent(origin, destination, start_time, end_time,
 
 【出力フォーマット】
 ## ツーリング概要
-（総距離・移動時間・景点数などを箇条書き）
+（総距離・移動時間・景点数などを箇条書き。旅のスタイルも言及すること）
 
 ## タイムライン
-（Markdownテーブル: 時刻 | 場所 | カテゴリ | 滞在 | メモ）
+（Markdownテーブル: 時刻 | 場所 | カテゴリ | 走行距離 | 滞在時間 | 累積距離 | メモ）
 
 ## 注意事項
 （道路規制・{engine_cc}の制限・給油タイミングなど）
