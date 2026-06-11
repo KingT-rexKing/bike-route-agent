@@ -74,13 +74,19 @@ def calc_time_budget(start_time, end_time, distance_km, engine_cc, want_meal, wa
 
 
 def assign_stay_times(spots, available_min):
-    """スコアの比率で各スポットの滞在時間を配分する"""
+    """
+    カテゴリ別の標準滞在時間を使って各スポットの滞在時間を決める。
+    観景台は短く（15分）、博物館は長く（50分）など、実態に合わせた値を設定。
+    最後に10分単位に丸める。
+    """
     if not spots:
         return spots
-    total_score = sum(s.get("score", 0.5) for s in spots) or 1.0
     for spot in spots:
-        stay = int((spot.get("score", 0.5) / total_score) * available_min)
-        stay = max(config.MIN_STAY_MIN, min(config.MAX_STAY_MIN, stay))
+        cat  = spot.get("category", "")
+        base = config.STAY_TIME_BY_CATEGORY.get(cat, config.STAY_TIME_DEFAULT)
+        # 上限・下限でクランプしてから10分単位に丸める
+        stay = max(config.MIN_STAY_MIN, min(config.MAX_STAY_MIN, base))
+        stay = round(stay / 10) * 10
         spot["stay_min"] = stay
     return spots
 
@@ -103,7 +109,24 @@ def build_timeline(start_time, stops, geometry):
                 min_d, best_i = d, i
         return best_i / max(len(geometry) - 1, 1)
 
+    # まず全スポットをルート順に並べる
     stops.sort(key=lambda s: route_pos(s["lat"], s["lon"]))
+
+    # 飲食店を中盤・後半に分散させる
+    # （ルート序盤に飲食店が固まらないよう、観光スポットの間に差し込む）
+    restaurants = [s for s in stops if s.get("category") in ("restaurant", "cafe")]
+    others      = [s for s in stops if s.get("category") not in ("restaurant", "cafe")]
+
+    if len(restaurants) >= 1:
+        # 1軒目: 観光スポットの1/2地点に差し込む
+        pos = max(1, len(others) // 2)
+        others.insert(pos, restaurants[0])
+    if len(restaurants) >= 2:
+        # 2軒目: その後ろの3/4地点に差し込む
+        pos = max(len(others) - 1, len(others) * 3 // 4)
+        others.insert(pos, restaurants[1])
+
+    stops = others
 
     timeline = []
     cursor   = to_min(start_time)
