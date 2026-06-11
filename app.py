@@ -2,7 +2,10 @@
 # app.py  ―  フロントエンド（UI）
 # =============================================
 
+import json
 import urllib.parse
+from datetime import time as dtime, timedelta
+
 import requests
 import streamlit as st
 import folium
@@ -58,7 +61,7 @@ footer { visibility: hidden !important; height: 0 !important; }
 h1 a, h2 a, h3 a,
 [data-testid="stMarkdownContainer"] h2 a { display: none !important; }
 
-/* ── 全体背景を透明に（JSスライドショーを見せる） ── */
+/* ── 全体背景を透明に（フルスクリーン背景レイヤーを見せる） ── */
 body { background: #0d0d0d !important; }
 .stApp,
 [data-testid="stAppViewContainer"],
@@ -71,6 +74,11 @@ section.main, .main {
     background: rgba(8,8,8,0.90) !important;
     border-right: 1px solid rgba(255,107,0,0.3) !important;
     backdrop-filter: blur(16px);
+}
+/* 背景注入用iframe（height=1）が余白を作らないように */
+iframe[height="0"], iframe[height="1"] {
+    display:block !important; height:0 !important;
+    min-height:0 !important; border:none !important;
 }
 
 /* ── アニメーション ── */
@@ -90,6 +98,10 @@ section.main, .main {
     0%   { background-position:0 0; }
     100% { background-position:80px 0; }
 }
+@keyframes title-shine {
+    0%   { background-position: -200% center; }
+    100% { background-position: 200% center; }
+}
 
 /* ── レイアウト ── */
 .main .block-container { padding-top:1rem; max-width:1200px; }
@@ -99,9 +111,12 @@ section.main, .main {
 .hero-title {
     font-family:'Bebas Neue',sans-serif;
     font-size:clamp(2.8rem,7vw,5rem); letter-spacing:.08em;
-    background:linear-gradient(135deg,#FF6B00,#FFB347,#FF6B00);
+    background:linear-gradient(110deg,#FF6B00 25%,#FFE0B3 50%,#FF6B00 75%);
+    background-size:200% auto;
     -webkit-background-clip:text; -webkit-text-fill-color:transparent;
     background-clip:text; margin:0; line-height:1;
+    animation:title-shine 5s linear infinite;
+    text-shadow:0 0 60px rgba(255,107,0,.35);
 }
 .hero-sub {
     font-family:'Rajdhani','Noto Sans JP',sans-serif;
@@ -129,14 +144,22 @@ section.main, .main {
     background:rgba(255,255,255,.06) !important;
     border:1px solid rgba(255,107,0,.25) !important;
     border-radius:8px !important; color:#fff !important;
+    transition:border-color .2s, box-shadow .2s;
 }
 [data-testid="stTextInput"] input:focus {
     border-color:rgba(255,107,0,.7) !important;
-    box-shadow:0 0 0 2px rgba(255,107,0,.15) !important;
+    box-shadow:0 0 0 2px rgba(255,107,0,.15), 0 0 18px rgba(255,107,0,.25) !important;
 }
 [data-testid="stTextInput"] label { color:rgba(255,255,255,.65) !important; }
 [data-testid="stRadio"] label,
 [data-testid="stCheckbox"] label { color:rgba(255,255,255,.8) !important; }
+
+/* ── スライダー ── */
+[data-testid="stSlider"] [data-baseweb="slider"] [role="slider"] {
+    background:#FF6B00 !important;
+    box-shadow:0 0 10px rgba(255,107,0,.7) !important;
+}
+[data-testid="stSlider"] label { color:rgba(255,255,255,.65) !important; }
 
 /* ── ボタン ── */
 [data-testid="stBaseButton-primary"] {
@@ -146,22 +169,35 @@ section.main, .main {
     font-size:1.1rem !important; font-weight:700 !important;
     letter-spacing:.1em !important; color:#fff !important;
     animation:pulse-glow 2.5s ease-in-out infinite;
+    transition:transform .15s !important;
 }
+[data-testid="stBaseButton-primary"]:hover { transform:scale(1.03); }
+[data-testid="stBaseButton-primary"]:active { transform:scale(.97); }
 [data-testid="stBaseButton-secondary"] {
     background:rgba(255,255,255,.06) !important;
     border:1px solid rgba(255,107,0,.3) !important;
     border-radius:8px !important; color:rgba(255,255,255,.8) !important;
     font-family:'Rajdhani',sans-serif !important; font-weight:600 !important;
+    transition:border-color .2s, background .2s, transform .15s !important;
+}
+[data-testid="stBaseButton-secondary"]:hover {
+    border-color:rgba(255,107,0,.7) !important;
+    background:rgba(255,107,0,.12) !important;
+    transform:translateY(-1px);
 }
 
 /* ── KPIカード ── */
 .kpi-card {
     background:rgba(0,0,0,.55); border:1px solid rgba(255,107,0,.22);
     border-radius:12px; padding:1.2rem 1.5rem; text-align:center;
-    backdrop-filter:blur(8px); transition:border-color .2s,transform .2s;
+    backdrop-filter:blur(8px);
+    transition:border-color .25s, transform .25s, box-shadow .25s;
     animation:fade-in .6s ease-out;
 }
-.kpi-card:hover { border-color:rgba(255,107,0,.5); transform:translateY(-3px); }
+.kpi-card:hover {
+    border-color:rgba(255,107,0,.6); transform:translateY(-4px) scale(1.02);
+    box-shadow:0 8px 30px rgba(255,107,0,.18);
+}
 .kpi-label { font-family:'Rajdhani',sans-serif; font-size:.68rem; letter-spacing:.2em; color:rgba(255,255,255,.45); text-transform:uppercase; margin-bottom:.3rem; }
 .kpi-value { font-family:'Bebas Neue',sans-serif; font-size:2.2rem; color:#FF6B00; line-height:1; }
 .kpi-unit  { font-family:'Rajdhani',sans-serif; font-size:.85rem; color:rgba(255,255,255,.4); margin-top:.2rem; }
@@ -228,7 +264,12 @@ section.main, .main {
     font-family:'Noto Sans JP',sans-serif; font-size:.9rem;
 }
 .spot-link:hover { text-decoration:underline; color:#FFB347 !important; }
-.spot-thumb { width:80px; height:56px; object-fit:cover; border-radius:6px; border:1px solid rgba(255,107,0,.3); display:block; }
+.spot-thumb {
+    width:80px; height:56px; object-fit:cover; border-radius:6px;
+    border:1px solid rgba(255,107,0,.3); display:block;
+    transition:transform .25s, box-shadow .25s;
+}
+.spot-thumb:hover { transform:scale(1.6); box-shadow:0 6px 24px rgba(0,0,0,.6); }
 .spot-no-img {
     width:80px; height:56px; border-radius:6px;
     border:1px dashed rgba(255,107,0,.25);
@@ -243,9 +284,13 @@ section.main, .main {
 .feature-card {
     background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.08);
     border-radius:14px; padding:1.5rem; backdrop-filter:blur(8px);
-    transition:border-color .25s,transform .25s; animation:fade-in .8s ease-out;
+    transition:border-color .25s, transform .25s, box-shadow .25s;
+    animation:fade-in .8s ease-out;
 }
-.feature-card:hover { border-color:rgba(255,107,0,.4); transform:translateY(-4px); }
+.feature-card:hover {
+    border-color:rgba(255,107,0,.5); transform:translateY(-5px);
+    box-shadow:0 12px 36px rgba(255,107,0,.15);
+}
 .feature-icon  { font-size:2rem; margin-bottom:.7rem; }
 .feature-title { font-family:'Rajdhani',sans-serif; font-size:1.1rem; font-weight:700; color:#FF6B00; margin-bottom:.4rem; }
 .feature-desc  { font-family:'Noto Sans JP',sans-serif; font-size:.82rem; color:rgba(255,255,255,.5); line-height:1.6; }
@@ -259,59 +304,219 @@ hr { border-color:rgba(255,107,0,.15) !important; margin:1.5rem 0 !important; }
 """, unsafe_allow_html=True)
 
 
-# ── 背景スライドショー（JSでbodyに直接注入） ──────────────────
-SLIDE_URLS = [
-    "https://source.unsplash.com/1920x1080/?motorcycle,japan,road",
-    "https://source.unsplash.com/1920x1080/?mountain,road,japan,scenic",
-    "https://source.unsplash.com/1920x1080/?coastal,highway,japan",
-    "https://source.unsplash.com/1920x1080/?motorcycle,touring,sunset",
+# ── フルスクリーン背景＋特効レイヤー ──────────────────────────────
+# st.markdown 経由の <script> は実行されないため、components.html の
+# iframe 内から window.parent.document に注入する。
+#  ・実写真スライドショー（Ken Burns ズーム + クロスフェード）
+#  ・マウス追従パララックス
+#  ・Canvas パーティクル（火の粉 + スピードライン）
+#  ・マウス追従グロー / クリック可能なスライドインジケーター
+#  ・画像ロード失敗時はグラデーション背景に自動フォールバック
+BG_IMAGES = [
+    # Unsplash の実写真（ライダー / 峠道 / 富士山 / 海岸線）
+    "https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=1920&q=80&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=1920&q=80&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1545569341-9eb8b30979d9?w=1920&q=80&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&q=80&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1490806843957-31f4c9a91c65?w=1920&q=80&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=1920&q=80&auto=format&fit=crop",
 ]
-slide_js_arr = str(SLIDE_URLS).replace("'", '"')
 
-st.markdown(f"""
+# Streamlit 1.58+ は st.iframe、旧バージョンは components.v1.html に回退
+if hasattr(st, "iframe"):
+    _inject_html = st.iframe
+else:
+    import streamlit.components.v1 as _components
+    _inject_html = _components.html
+
+_inject_html(f"""
 <script>
 (function() {{
-    var urls = {slide_js_arr};
-    function setup() {{
-        if (document.getElementById('bg-wrap')) return;
+    var P = window.parent.document;
+    var W = window.parent;
+    if (P.getElementById('fx-bg')) return;
+    var URLS = {json.dumps(BG_IMAGES)};
 
-        /* コンテナ */
-        var wrap = document.createElement('div');
-        wrap.id = 'bg-wrap';
-        wrap.style.cssText = 'position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none;';
-        document.body.insertBefore(wrap, document.body.firstChild);
+    /* ===== スタイル（パーツ共通） ===== */
+    var css = P.createElement('style');
+    css.textContent = `
+        @keyframes fx-kenburns {{
+            0%   {{ transform: scale(1.05) translate(0,0); }}
+            100% {{ transform: scale(1.18) translate(-1.5%, -1%); }}
+        }}
+        @keyframes fx-grad-move {{
+            0%   {{ background-position: 0% 50%; }}
+            50%  {{ background-position: 100% 50%; }}
+            100% {{ background-position: 0% 50%; }}
+        }}
+        #fx-bg   {{ position:fixed; inset:0; z-index:-2; overflow:hidden; pointer-events:none; }}
+        #fx-fall {{
+            position:absolute; inset:0;
+            background:linear-gradient(-45deg,#1a0d00,#0d0d0d,#26120a,#0d0d0d);
+            background-size:400% 400%; animation:fx-grad-move 14s ease infinite;
+        }}
+        .fx-slide {{
+            position:absolute; inset:-4%;
+            background-size:cover; background-position:center;
+            opacity:0; transition:opacity 2.4s ease-in-out;
+            will-change:transform,opacity;
+        }}
+        .fx-slide.on {{ opacity:1; animation:fx-kenburns 11s ease-out forwards; }}
+        #fx-overlay {{
+            position:absolute; inset:0;
+            background:
+                radial-gradient(ellipse at center, rgba(0,0,0,.35) 0%, rgba(0,0,0,.78) 100%),
+                linear-gradient(180deg, rgba(13,13,13,.55), rgba(13,13,13,.35) 40%, rgba(13,13,13,.7));
+        }}
+        #fx-canvas {{ position:fixed; inset:0; z-index:-1; pointer-events:none; }}
+        #fx-glow {{
+            position:fixed; width:520px; height:520px; border-radius:50%;
+            background:radial-gradient(circle, rgba(255,107,0,.14) 0%, transparent 65%);
+            pointer-events:none; z-index:-1; transform:translate(-50%,-50%);
+            will-change:left,top;
+        }}
+        #fx-dots {{
+            position:fixed; right:18px; bottom:16px; z-index:999990;
+            display:flex; gap:8px; align-items:center;
+        }}
+        .fx-dot {{
+            width:9px; height:9px; border-radius:50%; cursor:pointer;
+            background:rgba(255,255,255,.28); border:1px solid rgba(255,107,0,.4);
+            transition:all .3s; pointer-events:auto;
+        }}
+        .fx-dot:hover {{ transform:scale(1.5); }}
+        .fx-dot.on {{ background:#FF6B00; box-shadow:0 0 10px rgba(255,107,0,.9); width:22px; border-radius:5px; }}
+    `;
+    P.head.appendChild(css);
 
-        /* 各スライド */
-        var slides = urls.map(function(u) {{
-            var d = document.createElement('div');
-            d.style.cssText = 'position:absolute;inset:0;background:url('+u+') center/cover no-repeat;opacity:0;transition:opacity 2s ease-in-out;';
-            wrap.appendChild(d);
-            return d;
+    /* ===== 背景レイヤー ===== */
+    var wrap = P.createElement('div');
+    wrap.id = 'fx-bg';
+    P.body.insertBefore(wrap, P.body.firstChild);
+
+    var fall = P.createElement('div');     /* 全画像失敗時のフォールバック */
+    fall.id = 'fx-fall';
+    wrap.appendChild(fall);
+
+    var inner = P.createElement('div');    /* パララックス対象 */
+    inner.style.cssText = 'position:absolute;inset:0;will-change:transform;';
+    wrap.appendChild(inner);
+
+    var overlay = P.createElement('div');
+    overlay.id = 'fx-overlay';
+    wrap.appendChild(overlay);
+
+    /* ===== スライド（ロード成功した画像のみ採用） ===== */
+    var slides = [], idx = 0, timer = null;
+
+    var dots = P.createElement('div');
+    dots.id = 'fx-dots';
+    P.body.appendChild(dots);
+
+    function show(i) {{
+        slides.forEach(function(s, k) {{
+            s.el.classList.toggle('on', k === i);
+            s.dot.classList.toggle('on', k === i);
         }});
-
-        /* 暗めオーバーレイ */
-        var ov = document.createElement('div');
-        ov.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.62);';
-        wrap.appendChild(ov);
-
-        /* 最初のスライドを表示 */
-        var idx = 0;
-        slides[0].style.opacity = '1';
-
-        setInterval(function() {{
-            slides[idx].style.opacity = '0';
-            idx = (idx + 1) % slides.length;
-            slides[idx].style.opacity = '1';
-        }}, 6000);
+        idx = i;
+    }}
+    function next() {{ if (slides.length > 1) show((idx + 1) % slides.length); }}
+    function restartTimer() {{
+        if (timer) W.clearInterval(timer);
+        timer = W.setInterval(next, 9000);
     }}
 
-    /* Streamlitの描画完了を待つ */
-    var t = setInterval(function() {{
-        if (document.body) {{ setup(); clearInterval(t); }}
-    }}, 300);
+    URLS.forEach(function(u) {{
+        var img = new W.Image();
+        img.onload = function() {{
+            var d = P.createElement('div');
+            d.className = 'fx-slide';
+            d.style.backgroundImage = 'url("' + u + '")';
+            inner.appendChild(d);
+
+            var dot = P.createElement('div');
+            dot.className = 'fx-dot';
+            dots.appendChild(dot);
+
+            var s = {{ el: d, dot: dot }};
+            slides.push(s);
+            dot.addEventListener('click', function() {{
+                show(slides.indexOf(s));
+                restartTimer();   /* 手動切替後はタイマーをリセット */
+            }});
+            if (slides.length === 1) {{ show(0); restartTimer(); }}
+        }};
+        img.src = u;
+    }});
+
+    /* ===== マウスパララックス + グロー ===== */
+    var glow = P.createElement('div');
+    glow.id = 'fx-glow';
+    glow.style.left = '50%'; glow.style.top = '40%';
+    P.body.appendChild(glow);
+
+    var mx = 0.5, my = 0.5;
+    P.addEventListener('mousemove', function(e) {{
+        mx = e.clientX / W.innerWidth;
+        my = e.clientY / W.innerHeight;
+        inner.style.transform =
+            'translate(' + ((mx - 0.5) * -18) + 'px,' + ((my - 0.5) * -12) + 'px)';
+        glow.style.left = e.clientX + 'px';
+        glow.style.top  = e.clientY + 'px';
+    }});
+
+    /* ===== Canvas パーティクル（火の粉 + スピードライン） ===== */
+    var cv = P.createElement('canvas');
+    cv.id = 'fx-canvas';
+    P.body.appendChild(cv);
+    var ctx = cv.getContext('2d');
+
+    function resize() {{ cv.width = W.innerWidth; cv.height = W.innerHeight; }}
+    resize();
+    W.addEventListener('resize', resize);
+
+    var N = 46, parts = [];
+    for (var i = 0; i < N; i++) {{
+        parts.push({{
+            x: Math.random() * 2000, y: Math.random() * 1200,
+            r: Math.random() * 2.2 + .6,
+            vx: -(Math.random() * .9 + .25), vy: -(Math.random() * .35 + .05),
+            a: Math.random() * .5 + .15,
+            line: Math.random() < .18   /* 一部はスピードラインに */
+        }});
+    }}
+
+    function tick() {{
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        for (var i = 0; i < N; i++) {{
+            var p = parts[i];
+            /* マウスに緩く反応（近いほど加速） */
+            var speed = 1 + mx * 1.6;
+            p.x += p.vx * speed; p.y += p.vy;
+            if (p.x < -60 || p.y < -20) {{
+                p.x = cv.width + Math.random() * 80;
+                p.y = Math.random() * cv.height;
+            }}
+            if (p.line) {{
+                ctx.strokeStyle = 'rgba(255,140,40,' + p.a * .5 + ')';
+                ctx.lineWidth = p.r * .5;
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p.x + 34 * speed, p.y + 4);
+                ctx.stroke();
+            }} else {{
+                ctx.fillStyle = 'rgba(255,160,60,' + p.a + ')';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                ctx.fill();
+            }}
+        }}
+        W.requestAnimationFrame(tick);
+    }}
+    tick();
 }})();
 </script>
-""", unsafe_allow_html=True)
+""", height=1)
 
 
 # ── ヒーローヘッダー ────────────────────────────────────────────
@@ -328,15 +533,37 @@ st.markdown("""
 
 
 # ── サイドバー ────────────────────────────────────────────────────
+PRESET_DESTS = ["箱根町", "奥多摩", "秩父", "江の島", "日光", "房総半島"]
+
+def _set_dest(name: str):
+    st.session_state["dest_input"] = name
+
+if "dest_input" not in st.session_state:
+    st.session_state["dest_input"] = "箱根町"
+
 with st.sidebar:
     st.markdown('<div class="sidebar-title">📍 出発地 / 目的地</div>', unsafe_allow_html=True)
     origin      = st.text_input("出発地", value="東京都新宿区", label_visibility="collapsed", placeholder="例: 東京都新宿区")
-    destination = st.text_input("目的地", value="箱根町",       label_visibility="collapsed", placeholder="例: 箱根町")
+    destination = st.text_input("目的地", key="dest_input", label_visibility="collapsed", placeholder="例: 箱根町")
 
-    st.markdown('<div class="sidebar-title">🕐 出発 / 帰着</div>', unsafe_allow_html=True)
-    c1, c2 = st.columns(2)
-    with c1: start_time = st.text_input("出発", value="08:00", label_visibility="collapsed")
-    with c2: end_time   = st.text_input("帰着", value="17:00", label_visibility="collapsed")
+    st.markdown('<div class="sidebar-title">⚡ 人気スポットから選ぶ</div>', unsafe_allow_html=True)
+    preset_cols = st.columns(3)
+    for i, name in enumerate(PRESET_DESTS):
+        with preset_cols[i % 3]:
+            st.button(name, key=f"preset_{i}", use_container_width=True,
+                      on_click=_set_dest, args=(name,))
+
+    st.markdown('<div class="sidebar-title">🕐 出発 〜 帰着</div>', unsafe_allow_html=True)
+    time_range = st.slider(
+        "ツーリング時間帯",
+        min_value=dtime(5, 0), max_value=dtime(22, 0),
+        value=(dtime(8, 0), dtime(17, 0)),
+        step=timedelta(minutes=30),
+        format="HH:mm",
+        label_visibility="collapsed",
+    )
+    start_time = time_range[0].strftime("%H:%M")
+    end_time   = time_range[1].strftime("%H:%M")
 
     st.markdown('<div class="sidebar-title">🔧 排量</div>', unsafe_allow_html=True)
     engine_cc = st.radio("排量", ["125cc","50cc"], label_visibility="collapsed", horizontal=True)
@@ -374,11 +601,10 @@ if run_btn:
     </div>
     """, unsafe_allow_html=True)
 
-    status_ph    = st.empty()
-    log_messages = []
+    status_box = st.status("🛰️ ルート解析を開始...", expanded=True)
     def show_status(msg):
-        log_messages.append(msg)
-        status_ph.info("\n\n".join(log_messages[-4:]))
+        status_box.write(msg)
+        status_box.update(label=msg)
 
     try:
         result = run_agent(
@@ -388,11 +614,15 @@ if run_btn:
             travel_style=travel_style, status_cb=show_status,
         )
     except Exception as e:
-        loader_ph.empty(); status_ph.empty()
+        loader_ph.empty()
+        status_box.update(label="❌ エラーが発生しました", state="error", expanded=False)
         st.error(f"エラー: {e}")
         st.stop()
 
-    loader_ph.empty(); status_ph.empty()
+    loader_ph.empty()
+    status_box.update(label="✅ プラン生成完了！", state="complete", expanded=False)
+    st.toast("🏍️ ツーリングプランが完成しました！", icon="🎉")
+    st.balloons()
 
     route    = result.get("route")        or {}
     budget   = result.get("time_budget")  or {}
@@ -403,7 +633,7 @@ if run_btn:
     # ── KPIカード ──
     st.markdown("<br>", unsafe_allow_html=True)
     cols = st.columns(4)
-    for col, label, value, unit in zip(cols, [
+    for col, label in zip(cols, [
         ("DISTANCE",    route.get("distance_km","—"), "km"),
         ("RIDING TIME", budget.get("riding_min","—"), "分"),
         ("SPOTS",       budget.get("n_spots",0),      "箇所"),
@@ -500,7 +730,7 @@ if run_btn:
         </table>
         <p style="margin-top:.7rem;font-size:.72rem;color:rgba(255,255,255,.3);
                   font-family:'Noto Sans JP',sans-serif;">
-            ※ 写真はWikipedia日本語版から取得。名前クリックで公式サイト or Google検索へ。
+            ※ 写真はWikipedia日本語版から取得（マウスを乗せると拡大）。名前クリックで公式サイト or Google検索へ。
         </p>
         """, unsafe_allow_html=True)
 
