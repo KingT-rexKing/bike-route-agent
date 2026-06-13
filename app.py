@@ -58,8 +58,37 @@ footer { visibility: hidden !important; height: 0 !important; }
 h1 a, h2 a, h3 a,
 [data-testid="stMarkdownContainer"] h2 a { display: none !important; }
 
-/* ── 全体背景を透明に（JSスライドショーを見せる） ── */
-body { background: #0d0d0d !important; }
+/* ── 背景スライドショー（CSSアニメーション） ── */
+@keyframes fade-slide {
+    0%, 100% { opacity: 0; }
+    8%, 20%  { opacity: 1; }
+    25%      { opacity: 0; }
+}
+.bg-slide {
+    position: fixed !important;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0;
+    z-index: -2;
+    pointer-events: none;
+    animation: fade-slide 24s infinite both;
+}
+.bg-slide:nth-child(1) { animation-delay:  0s; }
+.bg-slide:nth-child(2) { animation-delay:  6s; }
+.bg-slide:nth-child(3) { animation-delay: 12s; }
+.bg-slide:nth-child(4) { animation-delay: 18s; }
+.bg-overlay {
+    position: fixed !important;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.62);
+    z-index: -1;
+    pointer-events: none;
+}
+
+/* ── 全体背景を透明に（スライドショーを見せる） ── */
+body { background: #0a0a0a !important; }
 .stApp,
 [data-testid="stAppViewContainer"],
 [data-testid="stHeader"],
@@ -259,58 +288,14 @@ hr { border-color:rgba(255,107,0,.15) !important; margin:1.5rem 0 !important; }
 """, unsafe_allow_html=True)
 
 
-# ── 背景スライドショー（JSでbodyに直接注入） ──────────────────
-SLIDE_URLS = [
-    "https://source.unsplash.com/1920x1080/?motorcycle,japan,road",
-    "https://source.unsplash.com/1920x1080/?mountain,road,japan,scenic",
-    "https://source.unsplash.com/1920x1080/?coastal,highway,japan",
-    "https://source.unsplash.com/1920x1080/?motorcycle,touring,sunset",
-]
-slide_js_arr = str(SLIDE_URLS).replace("'", '"')
-
-st.markdown(f"""
-<script>
-(function() {{
-    var urls = {slide_js_arr};
-    function setup() {{
-        if (document.getElementById('bg-wrap')) return;
-
-        /* コンテナ */
-        var wrap = document.createElement('div');
-        wrap.id = 'bg-wrap';
-        wrap.style.cssText = 'position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none;';
-        document.body.insertBefore(wrap, document.body.firstChild);
-
-        /* 各スライド */
-        var slides = urls.map(function(u) {{
-            var d = document.createElement('div');
-            d.style.cssText = 'position:absolute;inset:0;background:url('+u+') center/cover no-repeat;opacity:0;transition:opacity 2s ease-in-out;';
-            wrap.appendChild(d);
-            return d;
-        }});
-
-        /* 暗めオーバーレイ */
-        var ov = document.createElement('div');
-        ov.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.62);';
-        wrap.appendChild(ov);
-
-        /* 最初のスライドを表示 */
-        var idx = 0;
-        slides[0].style.opacity = '1';
-
-        setInterval(function() {{
-            slides[idx].style.opacity = '0';
-            idx = (idx + 1) % slides.length;
-            slides[idx].style.opacity = '1';
-        }}, 6000);
-    }}
-
-    /* Streamlitの描画完了を待つ */
-    var t = setInterval(function() {{
-        if (document.body) {{ setup(); clearInterval(t); }}
-    }}, 300);
-}})();
-</script>
+# ── 背景スライドショー（静的HTML + CSSアニメーション） ──────────
+# Streamlitはst.markdownのscriptタグを実行しないため、JSではなくCSSで実装
+st.markdown("""
+<div class="bg-slide" style="background-image:url('https://source.unsplash.com/1920x1080/?motorcycle,japan,road')"></div>
+<div class="bg-slide" style="background-image:url('https://source.unsplash.com/1920x1080/?mountain,road,japan,scenic')"></div>
+<div class="bg-slide" style="background-image:url('https://source.unsplash.com/1920x1080/?coastal,highway,japan')"></div>
+<div class="bg-slide" style="background-image:url('https://source.unsplash.com/1920x1080/?motorcycle,touring,sunset')"></div>
+<div class="bg-overlay"></div>
 """, unsafe_allow_html=True)
 
 
@@ -403,13 +388,13 @@ if run_btn:
     # ── KPIカード ──
     st.markdown("<br>", unsafe_allow_html=True)
     cols = st.columns(4)
-    for col, label, value, unit in zip(cols, [
+    kpi_items = [
         ("DISTANCE",    route.get("distance_km","—"), "km"),
         ("RIDING TIME", budget.get("riding_min","—"), "分"),
         ("SPOTS",       budget.get("n_spots",0),      "箇所"),
         ("MEALS",       budget.get("n_meals",0),      "回"),
-    ]):
-        label_txt, val, unit_txt = label
+    ]
+    for col, (label_txt, val, unit_txt) in zip(cols, kpi_items):
         with col:
             st.markdown(f"""
             <div class="kpi-card">
