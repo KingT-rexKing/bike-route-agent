@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>バイクルート AI</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    :root {
+      --bg:     #030305;
+      --accent: #E85000;
+      --gold:   #C8A26A;
+      --text:   #ebebeb;
+      --muted:  rgba(235,235,235,0.50);
+      --dim:    rgba(235,235,235,0.15);
+      --border: rgba(232,80,0,0.22);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Rajdhani', 'Noto Sans JP', sans-serif;
+      overflow: hidden;
+    }
+
+    /* ── PHASE 1: Cinema ──────────────────────────────────────── */
+    #cinema {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: #030305;
+      overflow: hidden;
+    }
+
+    /* 地平線グラデーション（空） */
+    #cin-sky {
+      position: absolute;
+      inset: 0;
+      bottom: 33%;
+      background: linear-gradient(180deg,
+        #010104 0%,
+        #04060e 55%,
+        #0a0d18 100%
+      );
+    }
+
+    /* 地面 */
+    #cin-road {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 34%;
+      background: linear-gradient(180deg, #07070d 0%, #0d0d14 100%);
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+
+    /* センターライン点線（流れる） */
+    #cin-road::before {
+      content: '';
+      position: absolute;
+      top: 28px; left: 0; right: 0;
+      height: 2px;
+      background: repeating-linear-gradient(
+        90deg,
+        rgba(200,162,106,0.28) 0,
+        rgba(200,162,106,0.28) 70px,
+        transparent 70px,
+        transparent 140px
+      );
+      background-size: 140px 2px;
+      animation: road-line 0.35s linear infinite;
+    }
+
+    @keyframes road-line {
+      to { background-position-x: -140px; }
+    }
+
+    /* 路肩オレンジ光 */
+    #cin-road::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg,
+        transparent 0%, rgba(232,80,0,0.2) 30%,
+        rgba(232,80,0,0.2) 70%, transparent 100%
+      );
+    }
+
+    /* スピードライン */
+    #cin-lines {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .cin-line {
+      position: absolute;
+      right: -10%;
+      height: 1px;
+      background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(255,255,255,0.10) 40%,
+        rgba(255,255,255,0.06) 100%
+      );
+      animation: cin-line-fly var(--dur) linear infinite var(--del);
+    }
+
+    @keyframes cin-line-fly {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-230vw); }
+    }
+
+    /* 摩托车容器 */
+    #cin-moto {
+      position: absolute;
+      bottom: 33%;
+      left: 0;
+      transform: translateY(55%);
+      will-change: transform;
+    }
+
+    #cin-moto-svg {
+      height: clamp(110px, 19vh, 165px);
+      width: auto;
+      filter:
+        drop-shadow(0 0 18px rgba(232,80,0,0.6))
+        drop-shadow(0 4px 40px rgba(232,80,0,0.25));
+    }
+
+    /* テキスト */
+    #cinema-ui {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 44px 52px;
+      pointer-events: none;
+    }
+
+    #cinema-tagline {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(3.2rem, 8.5vw, 7.5rem);
+      letter-spacing: 0.04em;
+      color: var(--text);
+      line-height: 0.95;
+      opacity: 0;
+      margin-bottom: 14px;
+    }
+
+    #cinema-sub {
+      font-size: clamp(0.7rem, 1.6vw, 0.9rem);
+      font-weight: 700;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      color: var(--accent);
+      opacity: 0;
+      margin-bottom: 36px;
+    }
+
+    #skip-btn {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      background: rgba(0,0,0,0.45);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--muted);
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      padding: 7px 16px;
+      border-radius: 3px;
+      cursor: pointer;
+      pointer-events: all;
+      transition: color 0.2s, border-color 0.2s;
+    }
+
+    #skip-btn:hover { color: var(--text); border-color: var(--accent); }
+
+    /* ── PHASE 2: App ─────────────────────────────────────────── */
+    #app {
+      position: fixed;
+      inset: 0;
+      display: none;
+      opacity: 0;
+      overflow: hidden;
+      /* Center form vertically via flex — set to flex when visible */
+      align-items: center;
+    }
+
+    /* Japan SVG map — right-side atmospheric element */
+    #japan-wrap {
+      position: absolute;
+      right: 3%;
+      top: 50%;
+      transform: translateY(-52%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    #japan-wrap svg {
+      overflow: visible;
+    }
+
+    #japan-wrap svg path {
+      fill: rgba(200,162,106,0.06);
+      stroke: var(--gold);
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 0 8px rgba(200,162,106,0.35));
+    }
+
+    #japan-wrap svg text {
+      fill: rgba(200,162,106,0.55);
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    /* Form panel — flex child so vertical centering doesn't conflict with GSAP x */
+    #form-panel {
+      position: relative;
+      margin-left: 6%;
+      width: min(480px, 88vw);
+      flex-shrink: 0;
+      z-index: 20;
+      background: rgba(3,3,5,0.82);
+      padding: 32px 36px 28px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      opacity: 0;
+    }
+
+    .eyebrow {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.28em;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    h1.display {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(2.4rem, 5.5vw, 4rem);
+      line-height: 0.9;
+      color: var(--text);
+      margin-bottom: 20px;
+    }
+
+    h1.display span { color: var(--accent); }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .form-grid .full { grid-column: 1 / -1; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+
+    label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    input, select {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 4px;
+      padding: 9px 12px;
+      color: var(--text);
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      outline: none;
+      transition: border-color 0.2s, background 0.2s;
+      width: 100%;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--accent);
+      background: rgba(232,80,0,0.06);
+    }
+
+    select option { background: #0a0a10; }
+
+    .checks {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .check-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .check-item input[type="checkbox"] {
+      width: 14px; height: 14px;
+      accent-color: var(--accent);
+    }
+
+    #submit-btn {
+      width: 100%;
+      padding: 13px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 18px;
+      letter-spacing: 0.12em;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s;
+    }
+
+    #submit-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+    #submit-btn:active { transform: none; }
+    #submit-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    #error-banner {
+      display: none;
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: rgba(232,80,0,0.08);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    #error-banner.active { display: block; }
+
+    /* ── LOADING ──────────────────────────────────────────────── */
+    #loading {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(3,3,5,0.92);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    #loading.active { display: flex; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-ring {
+      width: 48px;
+      height: 48px;
+      border: 3px solid rgba(255,255,255,0.08);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .loading-text {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 20px;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+    }
+
+    .loading-step {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.08em;
+    }
+
+    /* ── RESULTS ──────────────────────────────────────────────── */
+    #results {
+      display: none;
+      position: fixed;
+      inset: 0;
+      overflow-y: auto;
+      padding: 48px max(5vw, 20px);
+    }
+
+    #results.active { display: block; }
+
+    .results-header {
+      max-width: 1100px;
+      margin: 0 auto 36px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .results-header h2 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      line-height: 1;
+    }
+
+    .results-header h2 span { color: var(--accent); }
+
+    #btn-reset {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      background: none;
+      border: 1px solid var(--dim);
+      border-radius: 4px;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+    }
+
+    #btn-reset:hover { color: var(--text); border-color: var(--accent); }
+
+    .results-inner { max-width: 1100px; margin: 0 auto; }
+
+    .stats-row {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 36px;
+    }
+
+    .stat-block {
+      flex: 1;
+      padding: 18px 22px;
+      border-right: 1px solid var(--border);
+    }
+
+    .stat-block:last-child { border-right: none; }
+
+    .stat-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .stat-value {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 2rem;
+      line-height: 1;
+    }
+
+    .stat-unit { font-size: 11px; color: var(--muted); font-weight: 600; margin-left: 2px; }
+
+    #map-container {
+      height: 420px;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-bottom: 32px;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .timeline-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 32px;
+    }
+
+    .timeline-table th {
+      text-align: left;
+      padding: 8px 12px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .timeline-table td {
+      padding: 12px 12px;
+      border-bottom: 1px solid var(--dim);
+      vertical-align: middle;
+    }
+
+    .timeline-table tr:hover td { background: rgba(232,80,0,0.03); }
+
+    .cat-badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 2px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .cat-restaurant, .cat-cafe { background: rgba(200,162,106,0.12); color: var(--gold); }
+    .cat-gas_station           { background: rgba(232,80,0,0.10); color: var(--accent); }
+    .cat-viewpoint, .cat-museum, .cat-attraction, .cat-park { background: rgba(255,255,255,0.06); color: var(--text); }
+
+    #plan-text {
+      padding: 24px 28px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.75;
+      color: var(--muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    @media (max-width: 600px) {
+      #form-panel { left: 4%; width: 92vw; padding: 22px 18px 18px; }
+      #japan-wrap { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .loading-ring { animation: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════ PHASE 1: CINEMA INTRO ══════════════════════ -->
+<div id="cinema">
+  <div id="cin-sky"></div>
+  <div id="cin-road"></div>
+
+  <!-- スピードライン -->
+  <div id="cin-lines">
+    <div class="cin-line" style="top:12%;width:420px;--dur:0.55s;--del:-0.1s"></div>
+    <div class="cin-line" style="top:18%;width:280px;--dur:0.48s;--del:-0.3s"></div>
+    <div class="cin-line" style="top:25%;width:580px;--dur:0.62s;--del:-0.05s"></div>
+    <div class="cin-line" style="top:31%;width:350px;--dur:0.52s;--del:-0.2s"></div>
+    <div class="cin-line" style="top:38%;width:220px;--dur:0.44s;--del:-0.4s"></div>
+    <div class="cin-line" style="top:44%;width:490px;--dur:0.58s;--del:-0.15s"></div>
+    <div class="cin-line" style="top:51%;width:310px;--dur:0.50s;--del:-0.35s"></div>
+    <div class="cin-line" style="top:57%;width:640px;--dur:0.66s;--del:-0.08s"></div>
+    <div class="cin-line" style="top:62%;width:180px;--dur:0.42s;--del:-0.45s"></div>
+    <div class="cin-line" style="top:67%;width:520px;--dur:0.60s;--del:-0.25s"></div>
+    <div class="cin-line" style="top:72%;width:380px;--dur:0.54s;--del:-0.18s"></div>
+    <div class="cin-line" style="top:78%;width:260px;--dur:0.46s;--del:-0.38s"></div>
+  </div>
+
+  <!-- 摩托车SVG剪影 -->
+  <div id="cin-moto">
+    <svg id="cin-moto-svg" viewBox="0 0 580 210" xmlns="http://www.w3.org/2000/svg">
+      <g fill="#E85000">
+        <!-- 후륜 Rear wheel -->
+        <circle cx="100" cy="168" r="52"/>
+        <circle cx="100" cy="168" r="27" fill="#030305"/>
+        <circle cx="100" cy="168" r="9"/>
+
+        <!-- 전륜 Front wheel -->
+        <circle cx="478" cy="168" r="50"/>
+        <circle cx="478" cy="168" r="26" fill="#030305"/>
+        <circle cx="478" cy="168" r="9"/>
+
+        <!-- フレーム本体 -->
+        <path d="
+          M 100,116
+          C 116,94 136,80 158,73
+          C 172,68 186,65 198,63
+          C 208,50 226,38 260,33
+          C 298,28 332,38 355,57
+          C 362,63 358,72 348,72
+          C 330,65 296,62 262,62
+          C 228,62 208,65 198,70
+          C 185,72 168,76 150,82
+          C 136,90 120,102 100,116
+          Z
+        "/>
+
+        <!-- ガスタンク (最も特徴的なシルエット) -->
+        <path d="
+          M 196,64
+          C 200,46 220,32 260,26
+          C 300,20 336,34 356,56
+          C 362,64 354,72 344,70
+          C 322,64 292,61 262,61
+          C 232,61 210,64 196,70
+          C 192,68 192,66 196,64
+          Z
+        "/>
+
+        <!-- シート -->
+        <path d="
+          M 155,72
+          C 158,62 168,56 182,56
+          C 192,56 198,62 196,72
+          C 186,70 172,70 155,72
+          Z
+        "/>
+
+        <!-- フロントフォーク -->
+        <path d="M 344,72 L 430,158 L 446,150 L 360,64 Z"/>
+
+        <!-- エンジン下部/アンダーフレーム -->
+        <path d="
+          M 345,74
+          C 332,80 300,86 260,88
+          C 220,90 185,92 158,94
+          C 142,96 122,104 100,116
+          L 100,128
+          C 120,114 142,106 160,104
+          C 185,101 220,99 260,97
+          C 300,95 335,89 348,82
+          Z
+        "/>
+
+        <!-- ライダー胴体（前傾姿勢） -->
+        <path d="
+          M 194,64
+          C 196,46 208,30 224,22
+          C 234,16 244,20 244,32
+          C 242,46 232,58 220,66
+          C 212,68 202,68 194,64
+          Z
+        "/>
+
+        <!-- ライダー腕（ハンドルへ） -->
+        <path d="
+          M 240,30
+          C 272,38 310,50 344,62
+          C 312,58 274,44 242,38
+          Z
+        "/>
+
+        <!-- ヘルメット -->
+        <ellipse cx="226" cy="16" rx="21" ry="19"/>
+        <!-- バイザー -->
+        <path d="M 208,14 C 210,5 242,5 244,14 C 242,20 210,20 208,14 Z" fill="#C8A26A" opacity="0.55"/>
+
+        <!-- マフラー (ゴールド) -->
+        <path d="
+          M 152,154 C 240,158 370,158 442,153
+          L 446,148 C 372,153 240,153 148,149 Z
+        " fill="#C8A26A"/>
+
+        <!-- ヘッドライト -->
+        <ellipse cx="444" cy="120" rx="15" ry="10" transform="rotate(12,444,120)" fill="#ffe8a0" opacity="0.9"/>
+        <ellipse cx="444" cy="120" rx="9" ry="6" transform="rotate(12,444,120)" fill="#fff" opacity="0.7"/>
+      </g>
+    </svg>
+  </div>
+
+  <div id="cinema-ui">
+    <p id="cinema-tagline">下道だけの<br>バイク旅</p>
+    <p id="cinema-sub">AI Route Planner · Japan Local Roads Only</p>
+  </div>
+  <button id="skip-btn">SKIP</button>
+</div>
+
+<!-- ══════════════ PHASE 2: APP ════════════════════════════════ -->
+<div id="app">
+
+  <!-- Japan SVG map — 実経度緯度から変換した座標 -->
+  <!-- x=(lon-129.3)/16.7*455+12  y=(45.5-lat)/14.5*505+15 -->
+  <div id="japan-wrap">
+    <svg id="japan-svg" viewBox="0 0 480 540" width="400" height="450" aria-hidden="true">
+
+      <!-- 本州 Honshu：下关→太平洋南岸→青森→日本海北岸→回下关 -->
+      <path id="jp-honshu" d="
+        M 56,419
+        C 76,413 100,408 122,405
+        C 142,402 158,399 173,392
+        C 178,406 184,421 189,434
+        C 196,421 207,409 216,399
+        C 220,393 221,389 240,390
+        C 257,390 270,386 276,378
+        L 295,364 L 328,358
+        L 331,260 L 344,178 L 344,164
+        L 321,161 L 310,154
+        C 304,172 298,192 291,212
+        C 284,233 278,252 274,269
+        C 263,271 250,274 237,278
+        L 228,283
+        C 221,295 213,307 209,317
+        C 193,332 180,344 162,351
+        L 133,353 L 98,355
+        C 82,352 68,344 56,419 Z
+      "/>
+
+      <!-- 北海道 Hokkaido -->
+      <path id="jp-hokkaido" d="
+        M 331,154
+        L 308,115 L 312,94
+        L 345,77 L 354,18
+        L 378,33 L 408,55
+        L 444,67 L 460,91
+        L 432,108 L 395,123
+        L 357,143 L 331,154 Z
+      "/>
+
+      <!-- 四国 Shikoku -->
+      <path id="jp-shikoku" d="
+        M 95,422 L 128,408 L 143,413
+        L 132,444 L 101,460 L 90,453
+        L 95,422 Z
+      "/>
+
+      <!-- 九州 Kyushu -->
+      <path id="jp-kyushu" d="
+        M 56,419 L 39,429 L 23,446
+        L 28,461 L 44,506 L 68,497
+        L 79,455 L 56,419 Z
+      "/>
+
+      <!-- 城市标注 -->
+      <circle cx="348" cy="97"  r="2.5" fill="rgba(200,162,106,0.6)"/>
+      <text x="355" y="101" font-size="10">札幌</text>
+
+      <circle cx="331" cy="258" r="2.5" fill="rgba(200,162,106,0.6)"/>
+      <text x="338" y="262" font-size="10">仙台</text>
+
+      <circle cx="295" cy="360" r="3" fill="rgba(232,80,0,0.8)"/>
+      <text x="300" y="355" font-size="11" fill="rgba(232,80,0,0.85)" font-weight="700">东京</text>
+
+      <circle cx="173" cy="392" r="2.5" fill="rgba(200,162,106,0.6)"/>
+      <text x="158" y="386" font-size="10">大阪</text>
+
+      <circle cx="41" cy="429" r="2.5" fill="rgba(200,162,106,0.6)"/>
+      <text x="27" y="424" font-size="10">福冈</text>
+    </svg>
+  </div>
+
+  <!-- Form -->
+  <div id="form-panel">
+    <p class="eyebrow">AI Route Planner</p>
+    <h1 class="display">下道だけの<br/><span>バイク旅</span></h1>
+
+    <form id="plan-form">
+      <div class="form-grid">
+        <div class="field full">
+          <label>出发地</label>
+          <input type="text" name="origin" placeholder="例: 新宿区, 東京都" required />
+        </div>
+        <div class="field full">
+          <label>目的地</label>
+          <input type="text" name="destination" placeholder="例: 富士吉田市, 山梨県" required />
+        </div>
+        <div class="field">
+          <label>出发时刻</label>
+          <input type="time" name="start_time" value="08:00" required />
+        </div>
+        <div class="field">
+          <label>返回时刻</label>
+          <input type="time" name="end_time" value="18:00" required />
+        </div>
+        <div class="field">
+          <label>排气量</label>
+          <select name="engine_cc">
+            <option value="125cc">125cc（原二）</option>
+            <option value="50cc">50cc（原一）</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>旅行风格</label>
+          <select name="travel_style">
+            <option value="お任せ">均衡推荐</option>
+            <option value="風景">自然风景优先</option>
+            <option value="人文">文化史迹优先</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="checks">
+        <label class="check-item">
+          <input type="checkbox" name="want_meal" checked /> 含餐厅
+        </label>
+        <label class="check-item">
+          <input type="checkbox" name="want_gas" /> 含加油站
+        </label>
+      </div>
+
+      <button type="submit" id="submit-btn">生成路线</button>
+      <div id="error-banner"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ══════════════ LOADING ══════════════════════════════════════ -->
+<div id="loading">
+  <div class="loading-ring"></div>
+  <div class="loading-text">路线计算中</div>
+  <div class="loading-step" id="loading-step">识别地名中...</div>
+</div>
+
+<!-- ══════════════ RESULTS ══════════════════════════════════════ -->
+<div id="results">
+  <div class="results-header">
+    <h2 id="results-title">骑行<span>路线</span></h2>
+    <button id="btn-reset">← 重新搜索</button>
+  </div>
+  <div class="results-inner">
+    <div class="stats-row" id="stats-row"></div>
+    <div id="map-container"></div>
+    <p class="section-label">行程时间线</p>
+    <table class="timeline-table">
+      <thead>
+        <tr>
+          <th>#</th><th>地点</th><th>类别</th>
+          <th>到达</th><th>出发</th><th>停留</th><th>区间距离</th>
+        </tr>
+      </thead>
+      <tbody id="timeline-body"></tbody>
+    </table>
+    <pre id="plan-text"></pre>
+  </div>
+</div>
+
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// 1. CINEMA ANIMATION (GSAP + SVG)
+// ════════════════════════════════════════════════════════════════
+
+// ── GSAP cinema timeline ──────────────────────────────────────
+let cinemaActive = true;
+
+function startCinema() {
+  const tl = gsap.timeline({ onComplete: endCinema });
+
+  // 摩托车从左入场横穿到右侧消失
+  tl.fromTo('#cin-moto',
+    { x: '-130vw' },
+    { x: '130vw', duration: 3.2, ease: 'power1.inOut' },
+    0
+  );
+
+  // タイトル：フェードイン → ホールド → フェードアウト
+  tl.fromTo('#cinema-tagline',
+    { opacity: 0, y: 12 },
+    { opacity: 1, y: 0, duration: 0.7, ease: 'power2.out' },
+    0.9
+  );
+  tl.to('#cinema-tagline', { opacity: 0, duration: 0.45, ease: 'power2.in' }, 2.8);
+
+  tl.fromTo('#cinema-sub',
+    { opacity: 0 },
+    { opacity: 1, duration: 0.5 },
+    1.3
+  );
+  tl.to('#cinema-sub', { opacity: 0, duration: 0.4 }, 2.8);
+
+  // シネマ全体フェードアウト
+  tl.to('#cinema', { opacity: 0, duration: 0.55, ease: 'power2.in' }, 3.1);
+}
+
+function endCinema() {
+  cinemaActive = false;
+  document.getElementById('cinema').style.display = 'none';
+  transitionToApp();
+}
+
+// ── OLD CANVAS CODE REMOVED — replaced above ──────────────────
+function _unused_drawScene(motoX, motoY, sceneOpacity) {
+  ctx.clearRect(0, 0, W, H);
+  ctx.globalAlpha = sceneOpacity;
+
+  // Sky — very dark blue-grey gradient
+  const sky = ctx.createLinearGradient(0, 0, 0, H * 0.52);
+  sky.addColorStop(0, '#060810');
+  sky.addColorStop(0.6, '#0c1520');
+  sky.addColorStop(1, '#182030');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H * 0.52);
+
+  // Ocean — dark teal, left side
+  const ocean = ctx.createLinearGradient(0, H * 0.3, 0, H);
+  ocean.addColorStop(0, '#0a1820');
+  ocean.addColorStop(1, '#060c12');
+  ctx.fillStyle = ocean;
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.32);
+  ctx.bezierCurveTo(W * 0.1, H * 0.34, W * 0.28, H * 0.38, W * 0.42, H * 0.42);
+  ctx.lineTo(W * 0.32, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // Ocean shimmer line
+  ctx.strokeStyle = 'rgba(80,140,180,0.12)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.38);
+  ctx.bezierCurveTo(W * 0.15, H * 0.36, W * 0.3, H * 0.4, W * 0.42, H * 0.42);
+  ctx.stroke();
+
+  // Cliff/mountain — right side, dark green-grey silhouette
+  const cliff = ctx.createLinearGradient(0, H * 0.1, 0, H * 0.7);
+  cliff.addColorStop(0, '#0e1810');
+  cliff.addColorStop(1, '#0a1208');
+  ctx.fillStyle = cliff;
+  ctx.beginPath();
+  ctx.moveTo(W * 0.35, H);
+  ctx.lineTo(W * 0.38, H * 0.42);
+  ctx.bezierCurveTo(W * 0.42, H * 0.32, W * 0.52, H * 0.24, W * 0.62, H * 0.28);
+  ctx.bezierCurveTo(W * 0.70, H * 0.22, W * 0.76, H * 0.18, W * 0.82, H * 0.22);
+  ctx.bezierCurveTo(W * 0.88, H * 0.16, W * 0.93, H * 0.14, W, H * 0.18);
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // Second cliff layer — slightly lighter, more depth
+  ctx.fillStyle = 'rgba(18,28,16,0.7)';
+  ctx.beginPath();
+  ctx.moveTo(W * 0.5, H);
+  ctx.lineTo(W * 0.52, H * 0.48);
+  ctx.bezierCurveTo(W * 0.58, H * 0.35, W * 0.66, H * 0.30, W * 0.74, H * 0.32);
+  ctx.bezierCurveTo(W * 0.82, H * 0.28, W * 0.90, H * 0.24, W, H * 0.26);
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // Tree line on cliff (irregular dark green bumps)
+  ctx.fillStyle = '#081008';
+  for (let tx = W * 0.38; tx < W; tx += 22) {
+    const ty = getCliffY(tx);
+    const h = 18 + Math.sin(tx * 0.08) * 8;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.bezierCurveTo(tx - 8, ty - h * 0.7, tx + 8, ty - h, tx + 12, ty - h * 0.5);
+    ctx.lineTo(tx + 16, ty);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Road — perspective, slightly curved, center-left bias
+  const roadGrad = ctx.createLinearGradient(0, H * 0.42, 0, H);
+  roadGrad.addColorStop(0, '#101214');
+  roadGrad.addColorStop(1, '#0a0c0e');
+  ctx.fillStyle = roadGrad;
+
+  const vp = { x: W * 0.47, y: H * 0.44 }; // vanishing point
+  const roadW = W * 0.36; // road width at bottom
+
+  ctx.beginPath();
+  ctx.moveTo(vp.x - 18, vp.y);
+  ctx.lineTo(vp.x + 18, vp.y);
+  ctx.lineTo(W * 0.5 + roadW / 2, H);
+  ctx.lineTo(W * 0.5 - roadW / 2 + 30, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // Road edge lines
+  ctx.strokeStyle = 'rgba(220,200,160,0.15)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(vp.x - 16, vp.y + 2);
+  ctx.lineTo(W * 0.5 - roadW / 2 + 32, H);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(vp.x + 16, vp.y + 2);
+  ctx.lineTo(W * 0.5 + roadW / 2, H);
+  ctx.stroke();
+
+  // Center dashes
+  ctx.strokeStyle = 'rgba(220,200,160,0.25)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([H * 0.025, H * 0.03]);
+  ctx.beginPath();
+  ctx.moveTo(vp.x, vp.y + 4);
+  ctx.lineTo(W * 0.5 + 15, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Guardrail — left side of road
+  ctx.strokeStyle = 'rgba(160,160,160,0.18)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(vp.x - 14, vp.y + 3);
+  ctx.lineTo(W * 0.5 - roadW / 2 + 34, H);
+  ctx.stroke();
+
+  // Posts along guardrail
+  ctx.strokeStyle = 'rgba(120,120,120,0.2)';
+  ctx.lineWidth = 1.5;
+  const nPosts = 8;
+  for (let i = 0; i < nPosts; i++) {
+    const t = (i + 1) / (nPosts + 1);
+    const px = vp.x - 14 + (W * 0.5 - roadW / 2 + 34 - vp.x + 14) * t;
+    const py = vp.y + 3 + (H - vp.y - 3) * t;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px, py + (H - vp.y) * 0.04 * (1 - t * 0.5));
+    ctx.stroke();
+  }
+
+  // Motorcycle motion trail
+  if (motoX > -50 && motoX < W + 50) {
+    const trailLen = W * 0.12;
+    const trail = ctx.createLinearGradient(motoX - trailLen, 0, motoX - 20, 0);
+    trail.addColorStop(0, 'transparent');
+    trail.addColorStop(0.7, 'rgba(232,80,0,0.08)');
+    trail.addColorStop(1, 'rgba(232,80,0,0.18)');
+    ctx.fillStyle = trail;
+    ctx.fillRect(motoX - trailLen, motoY - 60, trailLen, 90);
+
+    // Headlight glow (front of bike)
+    const glow = ctx.createRadialGradient(motoX + 60, motoY - 10, 0, motoX + 60, motoY - 10, 80);
+    glow.addColorStop(0, 'rgba(255,240,180,0.25)');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.fillRect(motoX, motoY - 60, 120, 80);
+  }
+
+  // Draw motorcycle
+  if (motoX > -300 && motoX < W + 300) {
+    drawMoto(ctx, motoX, motoY);
+  }
+
+  ctx.globalAlpha = 1;
+}
+
+// Returns approximate Y of cliff top at given X
+function getCliffY(x) {
+  const t = (x - W * 0.35) / (W * 0.65);
+  return H * (0.42 - t * 0.24 + Math.sin(t * 3.2) * 0.04);
+}
+
+// ── Motorcycle drawing ────────────────────────────────────────
+function drawMoto(ctx, x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  const sc = Math.min(W, H) * 0.00185;
+  ctx.scale(sc, sc);
+
+  const O  = '#E85000';  // accent orange
+  const W2 = '#d0ccc4';  // light grey
+  const BK = '#111111';  // dark
+
+  function wheel(cx, cy, r) {
+    // tire
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.fillStyle = '#1a1a1a'; ctx.fill();
+    ctx.strokeStyle = '#444'; ctx.lineWidth = r * 0.22; ctx.stroke();
+    // rim
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.6, 0, Math.PI*2);
+    ctx.strokeStyle = W2; ctx.lineWidth = r * 0.12; ctx.stroke();
+    // hub
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.14, 0, Math.PI*2);
+    ctx.fillStyle = W2; ctx.fill();
+    // spokes x6
+    ctx.strokeStyle = W2; ctx.lineWidth = r * 0.06;
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 3) {
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * r * 0.14, cy + Math.sin(a) * r * 0.14);
+      ctx.lineTo(cx + Math.cos(a) * r * 0.58, cy + Math.sin(a) * r * 0.58);
+      ctx.stroke();
+    }
+  }
+
+  // ── wheels ──
+  wheel(-70, 46, 40);
+  wheel( 76, 46, 40);
+
+  // ── swing arm ──
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-12, 14); ctx.lineTo(-70, 46); ctx.stroke();
+
+  // ── front fork ──
+  ctx.strokeStyle = W2; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(52, -20); ctx.lineTo(68, 18); ctx.lineTo(76, 6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(58, -14); ctx.lineTo(74, 22); ctx.stroke();
+
+  // ── engine / lower frame ──
+  ctx.fillStyle = '#2a2a2a';
+  ctx.beginPath();
+  ctx.moveTo(-18, 14); ctx.lineTo(8, 14); ctx.lineTo(16, 30);
+  ctx.lineTo(-4, 30); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 2; ctx.stroke();
+
+  // ── exhaust pipe ──
+  ctx.strokeStyle = '#888'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-4, 30);
+  ctx.bezierCurveTo(20, 34, 44, 34, 64, 30);
+  ctx.stroke();
+  // tip glow
+  ctx.strokeStyle = '#ffaa44'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(60, 30); ctx.lineTo(70, 29); ctx.stroke();
+
+  // ── main frame (triangle) ──
+  ctx.strokeStyle = O; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-12, 14);   // pivot rear
+  ctx.lineTo(-8, -28);   // seat base
+  ctx.lineTo(36, -32);   // head
+  ctx.lineTo(52, -20);   // fork top
+  ctx.lineTo(16, 12);    // lower front
+  ctx.lineTo(-12, 14);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-8, -28); ctx.lineTo(16, 12); ctx.stroke(); // diagonal brace
+
+  // ── fuel tank (filled) ──
+  ctx.fillStyle = O; ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  ctx.moveTo(-6, -26);
+  ctx.bezierCurveTo(-2, -44, 20, -48, 38, -40);
+  ctx.lineTo(36, -32);
+  ctx.bezierCurveTo(18, -28, 0, -28, -6, -26);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // tank highlight
+  ctx.fillStyle = 'rgba(255,180,80,0.25)';
+  ctx.beginPath();
+  ctx.moveTo(2, -40); ctx.bezierCurveTo(10, -46, 24, -46, 32, -40);
+  ctx.lineTo(28, -36); ctx.bezierCurveTo(16, -38, 6, -38, 2, -40);
+  ctx.closePath(); ctx.fill();
+
+  // ── seat ──
+  ctx.fillStyle = '#1e1e1e';
+  ctx.beginPath();
+  ctx.moveTo(-14, -28);
+  ctx.bezierCurveTo(-6, -34, 6, -34, 14, -30);
+  ctx.lineTo(10, -26);
+  ctx.bezierCurveTo(2, -28, -8, -28, -14, -24);
+  ctx.closePath(); ctx.fill();
+
+  // ── headlamp ──
+  ctx.fillStyle = '#ffee88'; ctx.globalAlpha = 0.9;
+  ctx.beginPath(); ctx.ellipse(60, -20, 10, 7, -0.4, 0, Math.PI*2); ctx.fill();
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(60, -20, 10, 7, -0.4, 0, Math.PI*2); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // ── handlebar ──
+  ctx.strokeStyle = W2; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(32, -32); ctx.lineTo(44, -40); ctx.lineTo(48, -34); ctx.stroke();
+
+  // ── rider silhouette ──
+  // lower body / thigh
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath();
+  ctx.moveTo(-10, -24); ctx.bezierCurveTo(-4, -28, 10, -28, 14, -26);
+  ctx.lineTo(12, -14); ctx.lineTo(-8, -14); ctx.closePath(); ctx.fill();
+
+  // torso (leaning forward)
+  ctx.fillStyle = '#222';
+  ctx.beginPath();
+  ctx.moveTo(2, -26);
+  ctx.bezierCurveTo(4, -44, 16, -54, 24, -52);
+  ctx.lineTo(26, -44);
+  ctx.bezierCurveTo(20, -44, 14, -38, 12, -28);
+  ctx.closePath(); ctx.fill();
+
+  // jacket detail
+  ctx.strokeStyle = O; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(8, -28); ctx.bezierCurveTo(10, -40, 18, -50, 24, -52); ctx.stroke();
+
+  // arm reaching to handlebar
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(18, -40); ctx.bezierCurveTo(28, -40, 38, -38, 44, -38); ctx.stroke();
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(18, -40); ctx.bezierCurveTo(28, -40, 38, -38, 44, -38); ctx.stroke();
+
+  // helmet
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(20, -62, 16, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = O;
+  ctx.beginPath(); ctx.arc(20, -62, 16, 0, Math.PI*2); // outline
+  ctx.lineWidth = 2.5; ctx.strokeStyle = O; ctx.stroke();
+  // visor
+  ctx.fillStyle = 'rgba(255,160,40,0.35)';
+  ctx.beginPath();
+  ctx.moveTo(7, -60); ctx.bezierCurveTo(8, -68, 32, -68, 34, -60);
+  ctx.bezierCurveTo(32, -54, 8, -54, 7, -60); ctx.closePath(); ctx.fill();
+
+  ctx.restore();
+}
+
+
+
+// ════════════════════════════════════════════════════════════════
+// 2. JAPAN MAP — static, no animation
+// ════════════════════════════════════════════════════════════════
+function initJapanPaths() { /* no-op */ }
+function animateJapanMap() { /* no-op */ }
+
+// ════════════════════════════════════════════════════════════════
+// 3. TRANSITION: Cinema → App
+// ════════════════════════════════════════════════════════════════
+function transitionToApp() {
+  const app = document.getElementById('app');
+  app.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+
+  gsap.to(app, {
+    opacity: 1,
+    duration: 0.55,
+    ease: 'power2.out',
+  });
+
+  gsap.fromTo('#form-panel',
+    { x: -40, opacity: 0 },
+    { x: 0, opacity: 1, duration: 0.8, delay: 0.25, ease: 'power3.out' }
+  );
+}
+
+// Skip button
+document.getElementById('skip-btn').addEventListener('click', () => {
+  if (!cinemaActive) return;
+  gsap.killTweensOf(['#cin-moto', '#cinema-tagline', '#cinema-sub', '#cinema']);
+  cinemaActive = false;
+  gsap.to('#cinema', { opacity: 0, duration: 0.3, onComplete: () => {
+    document.getElementById('cinema').style.display = 'none';
+    transitionToApp();
+  }});
+});
+
+// ── Cinema開始 ──────────────────────────────────────────────
+window.addEventListener('load', startCinema);
+
+// ════════════════════════════════════════════════════════════════
+// 4. FORM SUBMIT
+// ════════════════════════════════════════════════════════════════
+const loadingSteps = [
+  '识别地名中...',
+  '计算下道路线...',
+  '优化时间分配...',
+  '搜索沿线景点...',
+  '生成行程文案...',
+];
+
+function cycleLoadingText() {
+  let i = 0;
+  const el = document.getElementById('loading-step');
+  return setInterval(() => { el.textContent = loadingSteps[i++ % loadingSteps.length]; }, 2200);
+}
+
+document.getElementById('plan-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target).entries());
+
+  const payload = {
+    origin: data.origin, destination: data.destination,
+    start_time: data.start_time, end_time: data.end_time,
+    engine_cc: data.engine_cc,
+    want_meal: !!data.want_meal,
+    want_gas:  !!data.want_gas,
+    travel_style: data.travel_style,
+  };
+
+  document.getElementById('submit-btn').disabled = true;
+  document.getElementById('error-banner').classList.remove('active');
+  document.getElementById('loading').classList.add('active');
+  const timer = cycleLoadingText();
+
+  try {
+    const resp = await fetch('/api/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) throw new Error((await resp.json()).detail || '服务器错误');
+    showResults(await resp.json(), payload);
+  } catch (err) {
+    document.getElementById('error-banner').textContent = err.message;
+    document.getElementById('error-banner').classList.add('active');
+  } finally {
+    clearInterval(timer);
+    document.getElementById('loading').classList.remove('active');
+    document.getElementById('submit-btn').disabled = false;
+  }
+});
+
+// ════════════════════════════════════════════════════════════════
+// 5. RESULTS
+// ════════════════════════════════════════════════════════════════
+let resultMap = null;
+
+function showResults(result, req) {
+  document.getElementById('app').style.display = 'none';
+  document.body.style.overflow = 'auto';
+  document.getElementById('results').classList.add('active');
+
+  document.getElementById('results-title').innerHTML =
+    `${req.origin} → <span>${req.destination}</span>`;
+
+  const b = result.time_budget;
+  document.getElementById('stats-row').innerHTML = [
+    { label: '总距离',   value: result.distance_km, unit: 'km'  },
+    { label: '骑行时间', value: b.riding_min,         unit: 'min' },
+    { label: '景点数',   value: b.n_spots,            unit: '处'  },
+    { label: '餐厅',     value: b.n_meals,            unit: '次'  },
+  ].map(s => `
+    <div class="stat-block">
+      <div class="stat-label">${s.label}</div>
+      <div class="stat-value">${s.value}<span class="stat-unit">${s.unit}</span></div>
+    </div>
+  `).join('');
+
+  const catLabel = {
+    restaurant:'餐厅', cafe:'咖啡', gas_station:'加油站',
+    viewpoint:'展望台', museum:'博物馆', attraction:'景点', park:'公园',
+  };
+
+  document.getElementById('timeline-body').innerHTML =
+    result.timeline.map(row => `
+      <tr>
+        <td style="color:var(--muted);font-size:11px">${row.order}</td>
+        <td>${row.name}</td>
+        <td><span class="cat-badge cat-${row.category}">${catLabel[row.category]||row.category}</span></td>
+        <td>${row.arrive}</td>
+        <td>${row.depart}</td>
+        <td style="color:var(--muted)">${row.stay_min}分</td>
+        <td style="color:var(--muted)">${row.dist_km}km</td>
+      </tr>
+    `).join('') ||
+    '<tr><td colspan="7" style="color:var(--muted);padding:18px 12px">未找到景点</td></tr>';
+
+  document.getElementById('plan-text').textContent = result.plan_text;
+  renderResultMap(result);
+
+  gsap.fromTo('#results', { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderResultMap(result) {
+  const container = document.getElementById('map-container');
+  if (resultMap) { resultMap.remove(); resultMap = null; }
+  container.innerHTML = '';
+
+  resultMap = L.map(container, { zoomControl: true, attributionControl: false });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(resultMap);
+
+  if (result.geometry && result.geometry.length) {
+    const ll = result.geometry.map(([lon, lat]) => [lat, lon]);
+    const line = L.polyline(ll, { color: '#E85000', weight: 4, opacity: 0.9 }).addTo(resultMap);
+    resultMap.fitBounds(line.getBounds(), { padding: [40, 40] });
+  }
+
+  (result.spots_for_map || []).forEach(spot => {
+    L.marker([spot.lat, spot.lon], {
+      icon: L.divIcon({
+        className: '',
+        html: '<div style="background:#C8A26A;border:2px solid #E85000;border-radius:50%;width:10px;height:10px;"></div>',
+        iconSize: [10, 10], iconAnchor: [5, 5],
+      })
+    }).addTo(resultMap).bindPopup(`<b>${spot.name}</b><br/>${spot.category}`);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// 6. RESET
+// ════════════════════════════════════════════════════════════════
+document.getElementById('btn-reset').addEventListener('click', () => {
+  document.getElementById('results').classList.remove('active');
+  document.body.style.overflow = 'hidden';
+  const app = document.getElementById('app');
+  app.style.display = 'flex';
+  gsap.set('#form-panel', { x: 0, opacity: 1 });
+  window.scrollTo({ top: 0 });
+});
+</script>
+</body>
+</html>
