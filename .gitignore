@@ -18,3 +18,9 @@ test_*.py
 
 # Streamlitキャッシュ
 .streamlit/cache/
+
+# Claude Code・スキル関連
+.claude/
+.agents/
+skills-lock.json
+impeccable-main.zip
