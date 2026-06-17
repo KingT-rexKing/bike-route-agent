@@ -8,1040 +8,893 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 
   <style>
+    /* ── TOKENS ─────────────────────────────────────── */
     :root {
-      --bg:     #030305;
-      --accent: #E85000;
-      --gold:   #C8A26A;
-      --text:   #ebebeb;
-      --muted:  rgba(235,235,235,0.50);
-      --dim:    rgba(235,235,235,0.15);
-      --border: rgba(232,80,0,0.22);
+      --bg:      #030305;
+      --surface: #0b0b12;
+      --accent:  #E85000;
+      --gold:    #C8A26A;
+      --text:    #ebebeb;
+      --muted:   rgba(235,235,235,0.42);
+      --dim:     rgba(235,235,235,0.10);
+      --border:  rgba(232,80,0,0.18);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
       width: 100%; height: 100%;
+      overflow: hidden;
       background: var(--bg);
       color: var(--text);
       font-family: 'Rajdhani', 'Noto Sans JP', sans-serif;
-      overflow: hidden;
     }
 
-    /* ── CINEMA ──────────────────────────────────────────────── */
-    #cinema {
+    /* ── MAP ─────────────────────────────────────────── */
+    #map {
       position: fixed;
       inset: 0;
-      z-index: 50;
-      background: var(--bg);
-      overflow: hidden;
+      z-index: 0;
     }
 
-    #cin-sky {
-      position: absolute;
-      inset: 0;
-      bottom: 33%;
-      background: linear-gradient(180deg,
-        #010104 0%,
-        #04060e 55%,
-        #0a0d18 100%
-      );
+    .leaflet-control-attribution {
+      background: rgba(3,3,5,0.65) !important;
+      color: rgba(235,235,235,0.30) !important;
+      font-size: 9px !important;
     }
+    .leaflet-control-attribution a { color: rgba(235,235,235,0.40) !important; }
 
-    #cin-road {
-      position: absolute;
-      bottom: 0; left: 0; right: 0;
-      height: 34%;
-      background: linear-gradient(180deg, #07070d 0%, #0d0d14 100%);
-      border-top: 1px solid rgba(255,255,255,0.05);
-    }
-
-    /* センターライン */
-    #cin-road::before {
-      content: '';
-      position: absolute;
-      top: 28px; left: 0; right: 0;
-      height: 2px;
-      background: repeating-linear-gradient(
-        90deg,
-        rgba(200,162,106,0.28) 0, rgba(200,162,106,0.28) 70px,
-        transparent 70px, transparent 140px
-      );
-      background-size: 140px 2px;
-      animation: road-line 0.35s linear infinite;
-    }
-
-    @keyframes road-line { to { background-position-x: -140px; } }
-
-    /* 路肩グロー */
-    #cin-road::after {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 1px;
-      background: linear-gradient(90deg,
-        transparent 0%, rgba(232,80,0,0.2) 30%,
-        rgba(232,80,0,0.2) 70%, transparent 100%
-      );
-    }
-
-    #cin-lines {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      overflow: hidden;
-    }
-
-    .cin-line {
-      position: absolute;
-      right: -10%;
-      height: 1px;
-      background: linear-gradient(90deg,
-        transparent 0%,
-        rgba(255,255,255,0.10) 40%,
-        rgba(255,255,255,0.06) 100%
-      );
-      animation: cin-line-fly var(--dur) linear infinite var(--del);
-    }
-
-    @keyframes cin-line-fly {
-      from { transform: translateX(0); }
-      to   { transform: translateX(-230vw); }
-    }
-
-    #cin-moto {
-      position: absolute;
-      bottom: 33%;
-      left: 0;
-      transform: translateY(55%);
-      will-change: transform;
-    }
-
-    #cin-moto-svg {
-      height: clamp(110px, 19vh, 165px);
-      width: auto;
-      filter:
-        drop-shadow(0 0 18px rgba(232,80,0,0.6))
-        drop-shadow(0 4px 40px rgba(232,80,0,0.25));
-    }
-
-    #cinema-ui {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-end;
-      padding: 44px 52px;
-      pointer-events: none;
-    }
-
-    #cinema-tagline {
-      font-family: 'Bebas Neue', sans-serif;
-      font-size: clamp(3.2rem, 8.5vw, 7.5rem);
-      letter-spacing: 0.04em;
-      color: var(--text);
-      line-height: 0.95;
-      opacity: 0;
-      margin-bottom: 14px;
-      text-wrap: balance;
-    }
-
-    #cinema-sub {
-      font-size: clamp(0.65rem, 1.4vw, 0.85rem);
+    .leaflet-control-zoom a {
+      background: rgba(3,3,5,0.88) !important;
+      color: var(--text) !important;
+      border-color: var(--border) !important;
       font-weight: 700;
-      letter-spacing: 0.35em;
+    }
+    .leaflet-control-zoom a:hover {
+      background: var(--surface) !important;
+      color: var(--accent) !important;
+    }
+
+    /* ── TOP BAR ─────────────────────────────────────── */
+    #topbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 52px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 22px;
+      background: linear-gradient(180deg, rgba(3,3,5,0.78) 0%, transparent 100%);
+      pointer-events: none;
+    }
+
+    .logo {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.05rem;
+      letter-spacing: 0.22em;
+      color: var(--text);
+      opacity: 0.92;
+    }
+
+    #status-bar {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
       color: var(--accent);
       opacity: 0;
-      margin-bottom: 36px;
+      transition: opacity 0.3s ease;
     }
+    #status-bar.visible { opacity: 1; }
 
-    #skip-btn {
-      position: absolute;
-      top: 24px; right: 24px;
-      background: rgba(0,0,0,0.45);
-      border: 1px solid rgba(255,255,255,0.12);
-      color: var(--muted);
-      font-family: 'Rajdhani', sans-serif;
-      font-size: 11px; font-weight: 700;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      padding: 7px 16px;
-      border-radius: 3px;
-      cursor: pointer;
-      transition: color 0.2s, border-color 0.2s;
-    }
-
-    #skip-btn:hover { color: var(--text); border-color: var(--accent); }
-    #skip-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-    /* ── APP ─────────────────────────────────────────────────── */
-    #app {
-      position: fixed;
-      inset: 0;
-      display: none;
-      opacity: 0;
-      overflow: hidden;
-      align-items: center;
-    }
-
-    #japan-wrap {
-      position: absolute;
-      right: 3%;
-      top: 50%;
-      transform: translateY(-52%);
-      pointer-events: none;
-      z-index: 1;
-    }
-
-    #japan-wrap svg { overflow: visible; }
-
-    #japan-wrap svg path {
-      fill: rgba(200,162,106,0.06);
-      stroke: var(--gold);
-      stroke-width: 1.5;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      filter: drop-shadow(0 0 8px rgba(200,162,106,0.35));
-    }
-
-    #japan-wrap svg text {
-      fill: rgba(200,162,106,0.55);
-      font-family: 'Noto Sans JP', sans-serif;
-      font-size: 11px;
-      font-weight: 700;
-    }
-
+    /* ── FORM PANEL ──────────────────────────────────── */
     #form-panel {
-      position: relative;
-      margin-left: 6%;
-      width: min(480px, 88vw);
-      flex-shrink: 0;
+      position: fixed;
+      left: 20px;
+      bottom: 20px;
+      width: 296px;
       z-index: 20;
-      background: rgba(3,3,5,0.82);
-      padding: 32px 36px 28px;
+      background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 6px;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+      border-radius: 3px;
+      padding: 18px 18px 14px;
       opacity: 0;
+      transform: translateY(18px);
     }
 
-    h1.display {
-      font-family: 'Bebas Neue', sans-serif;
-      font-size: clamp(2.4rem, 5.5vw, 4rem);
-      line-height: 0.9;
+    #plan-form {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    /* Bottom-border-only inputs */
+    .f-input {
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--dim);
+      border-radius: 0;
+      padding: 7px 0 6px;
       color: var(--text);
-      margin-bottom: 22px;
-      text-wrap: balance;
+      font-family: 'Rajdhani', 'Noto Sans JP', sans-serif;
+      font-size: 13.5px;
+      font-weight: 600;
+      width: 100%;
+      outline: none;
+      transition: border-color 0.18s ease;
+      appearance: none;
+      -webkit-appearance: none;
     }
+    .f-input::placeholder {
+      color: var(--muted);
+      font-weight: 400;
+    }
+    .f-input:focus { border-bottom-color: var(--accent); }
+    .f-input:focus-visible { outline: none; }
 
-    h1.display span { color: var(--accent); }
-
-    .form-grid {
+    .f-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
-      margin-bottom: 10px;
     }
 
-    .form-grid .full { grid-column: 1 / -1; }
-    .field { display: flex; flex-direction: column; gap: 4px; }
+    select.f-input { cursor: pointer; padding-right: 4px; }
+    select.f-input option { background: #0b0b14; color: var(--text); }
 
-    label {
+    /* ── OPTION TOGGLES ──────────────────────────────── */
+    .f-toggles {
+      display: flex;
+      gap: 6px;
+      padding: 2px 0 1px;
+    }
+
+    .toggle-btn {
+      font-family: 'Rajdhani', sans-serif;
       font-size: 10px;
       font-weight: 700;
-      letter-spacing: 0.15em;
+      letter-spacing: 0.13em;
       text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 2px;
+      border: 1px solid var(--dim);
+      background: transparent;
       color: var(--muted);
-    }
-
-    input, select {
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 4px;
-      padding: 9px 12px;
-      color: var(--text);
-      font-family: 'Rajdhani', sans-serif;
-      font-size: 15px;
-      font-weight: 600;
-      outline: none;
-      transition: border-color 0.2s, background 0.2s;
-      width: 100%;
-    }
-
-    input:focus, select:focus {
-      border-color: var(--accent);
-      background: rgba(232,80,0,0.06);
-    }
-
-    input::placeholder { color: var(--muted); }
-
-    select option { background: #0a0a10; }
-
-    .checks {
-      display: flex;
-      gap: 16px;
-      margin-bottom: 14px;
-    }
-
-    .check-item {
-      display: flex;
-      align-items: center;
-      gap: 7px;
       cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--muted);
+      transition: border-color 0.14s, color 0.14s, background 0.14s;
+    }
+    .toggle-btn.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(232,80,0,0.07);
+    }
+    .toggle-btn:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
     }
 
-    .check-item input[type="checkbox"] {
-      width: 14px; height: 14px;
-      accent-color: var(--accent);
-    }
-
+    /* ── SUBMIT BUTTON ───────────────────────────────── */
     #submit-btn {
       width: 100%;
-      padding: 13px;
+      padding: 11px;
       background: var(--accent);
       color: #fff;
       border: none;
-      border-radius: 4px;
+      border-radius: 2px;
       font-family: 'Bebas Neue', sans-serif;
-      font-size: 18px;
-      letter-spacing: 0.12em;
+      font-size: 15px;
+      letter-spacing: 0.16em;
       cursor: pointer;
-      transition: opacity 0.2s, transform 0.15s;
+      margin-top: 5px;
+      transition: opacity 0.18s, transform 0.10s;
     }
+    #submit-btn:hover:not(:disabled) {
+      opacity: 0.86;
+      transform: translateY(-1px);
+    }
+    #submit-btn:active:not(:disabled) { transform: none; }
+    #submit-btn:disabled { opacity: 0.32; cursor: not-allowed; }
+    #submit-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
-    #submit-btn:hover { opacity: 0.88; transform: translateY(-1px); }
-    #submit-btn:active { transform: none; }
-    #submit-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-    #submit-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+    /* Loading dims the form */
+    #form-panel.loading #plan-form { opacity: 0.38; pointer-events: none; }
 
-    #error-banner {
+    .f-loading-text {
       display: none;
-      margin-top: 12px;
-      padding: 10px 14px;
-      background: rgba(232,80,0,0.08);
-      border: 1px solid var(--accent);
-      border-radius: 4px;
-      font-size: 13px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent);
+      text-align: center;
+      padding: 5px 0 0;
+    }
+    #form-panel.loading .f-loading-text { display: block; }
+
+    /* ── FORM ERROR ──────────────────────────────────── */
+    #form-error {
+      display: none;
+      font-size: 11.5px;
       font-weight: 600;
       color: var(--accent);
+      line-height: 1.4;
+      margin-top: 7px;
+      opacity: 0;
+      transform: translateY(-3px);
     }
 
-    #error-banner.active { display: block; }
-
-    /* ── LOADING ─────────────────────────────────────────────── */
-    #loading {
-      display: none;
+    /* ── RESULTS PANEL ───────────────────────────────── */
+    #results-panel {
       position: fixed;
-      inset: 0;
-      background: rgba(3,3,5,0.92);
-      z-index: 200;
-      align-items: center;
-      justify-content: center;
+      top: 0; right: 0; bottom: 0;
+      width: 360px;
+      z-index: 20;
+      background: var(--bg);
+      border-left: 1px solid var(--border);
+      display: flex;
       flex-direction: column;
-      gap: 20px;
-    }
-
-    #loading.active { display: flex; }
-
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    .loading-ring {
-      width: 48px; height: 48px;
-      border: 3px solid rgba(255,255,255,0.08);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-
-    .loading-text {
-      font-family: 'Bebas Neue', sans-serif;
-      font-size: 20px;
-      letter-spacing: 0.2em;
-      color: var(--muted);
-    }
-
-    .loading-step {
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--accent);
-      letter-spacing: 0.08em;
-    }
-
-    /* ── RESULTS ─────────────────────────────────────────────── */
-    #results {
-      display: none;
-      position: fixed;
-      inset: 0;
-      overflow-y: auto;
-      padding: 48px max(5vw, 20px);
-    }
-
-    #results.active { display: block; }
-
-    .results-header {
-      max-width: 1100px;
-      margin: 0 auto 36px;
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 12px;
-      padding-bottom: 18px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .results-header h2 {
-      font-family: 'Bebas Neue', sans-serif;
-      font-size: clamp(1.8rem, 4vw, 3rem);
-      line-height: 1;
-      text-wrap: balance;
-    }
-
-    .results-header h2 span { color: var(--accent); }
-
-    #btn-reset {
-      font-family: 'Rajdhani', sans-serif;
-      font-size: 11px; font-weight: 700;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: var(--muted);
-      background: none;
-      border: 1px solid var(--dim);
-      border-radius: 4px;
-      padding: 6px 14px;
-      cursor: pointer;
-      transition: color 0.2s, border-color 0.2s;
-    }
-
-    #btn-reset:hover { color: var(--text); border-color: var(--accent); }
-    #btn-reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-    .results-inner { max-width: 1100px; margin: 0 auto; }
-
-    /* 統計バンド: インライン配置でヒーロー指標テンプレートを回避 */
-    .stats-band {
-      display: flex;
-      flex-wrap: wrap;
-      border: 1px solid var(--border);
-      border-radius: 6px;
       overflow: hidden;
-      margin-bottom: 36px;
+      transform: translateX(100%);
     }
 
-    .stat-item {
+    #results-header {
+      padding: 14px 18px 11px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    #results-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.25rem;
+      letter-spacing: 0.05em;
+      line-height: 1;
+      color: var(--text);
+    }
+    #results-title em {
+      font-style: normal;
+      color: var(--accent);
+    }
+
+    #close-results {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 17px;
+      cursor: pointer;
+      padding: 3px 6px;
+      line-height: 1;
+      transition: color 0.14s;
+      border-radius: 2px;
+    }
+    #close-results:hover { color: var(--text); }
+    #close-results:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* Stats strip */
+    #stats-strip {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .stat-cell {
       flex: 1;
-      min-width: 120px;
-      padding: 14px 20px;
+      padding: 10px 12px 9px;
       border-right: 1px solid var(--border);
       display: flex;
-      align-items: baseline;
-      gap: 6px;
+      flex-direction: column;
+      gap: 2px;
     }
+    .stat-cell:last-child { border-right: none; }
 
-    .stat-item:last-child { border-right: none; }
-
-    .stat-label {
-      font-size: 10px;
+    .stat-lbl {
+      font-size: 8.5px;
       font-weight: 700;
       letter-spacing: 0.18em;
       text-transform: uppercase;
       color: var(--muted);
-      white-space: nowrap;
     }
-
-    .stat-value {
+    .stat-val {
       font-family: 'Rajdhani', sans-serif;
-      font-size: 1.25rem;
+      font-size: 1.05rem;
       font-weight: 700;
       line-height: 1;
       color: var(--text);
     }
-
     .stat-unit {
-      font-size: 11px;
+      font-size: 9.5px;
       color: var(--muted);
       font-weight: 600;
+      margin-left: 1px;
     }
 
-    #map-container {
-      height: 420px;
-      border-radius: 6px;
-      overflow: hidden;
-      border: 1px solid var(--border);
-      margin-bottom: 32px;
+    /* Scrollable body */
+    #results-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 18px 20px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
     }
+    #results-body::-webkit-scrollbar { width: 3px; }
+    #results-body::-webkit-scrollbar-track { background: transparent; }
+    #results-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-    .timeline-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-      font-weight: 600;
-      margin-bottom: 32px;
-    }
-
-    .timeline-table th {
-      text-align: left;
-      padding: 8px 12px;
-      font-size: 10px; font-weight: 700;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: var(--muted);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .timeline-table td {
-      padding: 12px;
+    /* Timeline rows */
+    .tl-row {
+      display: grid;
+      grid-template-columns: 22px 1fr auto;
+      gap: 8px;
+      align-items: start;
+      padding: 10px 0;
       border-bottom: 1px solid var(--dim);
-      vertical-align: middle;
     }
+    .tl-row:last-child { border-bottom: none; }
 
-    .timeline-table tr:hover td { background: rgba(232,80,0,0.03); }
+    .tl-num {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--muted);
+      padding-top: 1px;
+      font-family: 'Rajdhani', sans-serif;
+    }
+    .tl-name {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.3;
+    }
+    .tl-meta {
+      font-size: 10px;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-top: 2px;
+    }
+    .tl-time {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--gold);
+      white-space: nowrap;
+      padding-top: 1px;
+      text-align: right;
+      font-family: 'Rajdhani', sans-serif;
+    }
+    .tl-depart {
+      display: block;
+      font-size: 9px;
+      color: var(--muted);
+      font-weight: 600;
+      margin-top: 1px;
+    }
 
     .cat-badge {
       display: inline-block;
-      padding: 2px 7px;
+      padding: 1px 5px;
       border-radius: 2px;
-      font-size: 10px; font-weight: 700;
+      font-size: 8.5px;
+      font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+      margin-top: 3px;
+    }
+    .cat-restaurant, .cat-cafe {
+      background: rgba(200,162,106,0.11); color: var(--gold);
+    }
+    .cat-gas_station {
+      background: rgba(232,80,0,0.09); color: var(--accent);
+    }
+    .cat-viewpoint, .cat-museum, .cat-attraction,
+    .cat-park, .cat-shrine, .cat-temple {
+      background: rgba(235,235,235,0.06); color: rgba(235,235,235,0.65);
     }
 
-    .cat-restaurant, .cat-cafe { background: rgba(200,162,106,0.12); color: var(--gold); }
-    .cat-gas_station            { background: rgba(232,80,0,0.10); color: var(--accent); }
-    .cat-viewpoint, .cat-museum, .cat-attraction, .cat-park {
-      background: rgba(255,255,255,0.06); color: var(--text);
-    }
-
-    #plan-text {
-      padding: 24px 28px;
-      background: rgba(255,255,255,0.02);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 13px;
-      line-height: 1.75;
+    /* Prose plan */
+    #plan-prose {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 11.5px;
+      line-height: 1.72;
       color: var(--muted);
       white-space: pre-wrap;
       word-break: break-word;
+      font-family: 'Noto Sans JP', sans-serif;
+      font-weight: 400;
     }
 
-    /* ── RESPONSIVE ──────────────────────────────────────────── */
-    @media (max-width: 600px) {
-      #form-panel { margin-left: 4%; width: 92vw; padding: 22px 18px 18px; }
-      #japan-wrap { display: none; }
-      #cinema-ui  { padding: 28px 24px; }
-      .stat-item  { min-width: 80px; padding: 12px 14px; }
-    }
-
-    /* ── REDUCED MOTION ──────────────────────────────────────── */
-    @media (prefers-reduced-motion: reduce) {
-      .loading-ring      { animation: none; }
-      #cin-road::before  { animation: none; }
-      .cin-line          { animation: none; }
-    }
-
-    /* ── REDUCED TRANSPARENCY fallback ───────────────────────── */
-    @media (prefers-reduced-transparency: reduce) {
+    /* ── MOBILE ──────────────────────────────────────── */
+    @media (max-width: 640px) {
       #form-panel {
-        background: rgba(3,3,5,0.97);
-        backdrop-filter: none;
-        -webkit-backdrop-filter: none;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        width: auto;
       }
+      #results-panel {
+        top: auto;
+        left: 0; right: 0; bottom: 0;
+        width: 100%;
+        height: 62vh;
+        border-left: none;
+        border-top: 1px solid var(--border);
+        transform: translateY(100%);
+      }
+    }
+
+    /* ── REDUCED MOTION ──────────────────────────────── */
+    @media (prefers-reduced-motion: reduce) {
+      #form-panel {
+        opacity: 1 !important;
+        transform: none !important;
+        transition: none !important;
+      }
+      #results-panel { transition: none !important; }
     }
   </style>
 </head>
 <body>
 
-<!-- ══ CINEMA ════════════════════════════════════════════════ -->
-<div id="cinema">
-  <div id="cin-sky"></div>
-  <div id="cin-road"></div>
+<!-- ══ MAP ═══════════════════════════════════════════ -->
+<div id="map" role="application" aria-label="ルートマップ"></div>
 
-  <div id="cin-lines">
-    <div class="cin-line" style="top:12%;width:420px;--dur:0.55s;--del:-0.1s"></div>
-    <div class="cin-line" style="top:18%;width:280px;--dur:0.48s;--del:-0.3s"></div>
-    <div class="cin-line" style="top:25%;width:580px;--dur:0.62s;--del:-0.05s"></div>
-    <div class="cin-line" style="top:31%;width:350px;--dur:0.52s;--del:-0.2s"></div>
-    <div class="cin-line" style="top:38%;width:220px;--dur:0.44s;--del:-0.4s"></div>
-    <div class="cin-line" style="top:44%;width:490px;--dur:0.58s;--del:-0.15s"></div>
-    <div class="cin-line" style="top:51%;width:310px;--dur:0.50s;--del:-0.35s"></div>
-    <div class="cin-line" style="top:57%;width:640px;--dur:0.66s;--del:-0.08s"></div>
-    <div class="cin-line" style="top:62%;width:180px;--dur:0.42s;--del:-0.45s"></div>
-    <div class="cin-line" style="top:67%;width:520px;--dur:0.60s;--del:-0.25s"></div>
-    <div class="cin-line" style="top:72%;width:380px;--dur:0.54s;--del:-0.18s"></div>
-    <div class="cin-line" style="top:78%;width:260px;--dur:0.46s;--del:-0.38s"></div>
-  </div>
+<!-- ══ TOP BAR ═══════════════════════════════════════ -->
+<header id="topbar">
+  <span class="logo">バイクルート AI</span>
+  <span id="status-bar" role="status" aria-live="polite" aria-atomic="true"></span>
+</header>
 
-  <!-- バイクSVGシルエット -->
-  <div id="cin-moto">
-    <svg id="cin-moto-svg" viewBox="0 0 580 210" xmlns="http://www.w3.org/2000/svg">
-      <g fill="#E85000">
-        <!-- 後輪 -->
-        <circle cx="100" cy="168" r="52"/>
-        <circle cx="100" cy="168" r="27" fill="#030305"/>
-        <circle cx="100" cy="168" r="9"/>
-        <!-- 前輪 -->
-        <circle cx="478" cy="168" r="50"/>
-        <circle cx="478" cy="168" r="26" fill="#030305"/>
-        <circle cx="478" cy="168" r="9"/>
-        <!-- フレーム本体 -->
-        <path d="M 100,116 C 116,94 136,80 158,73 C 172,68 186,65 198,63
-                 C 208,50 226,38 260,33 C 298,28 332,38 355,57
-                 C 362,63 358,72 348,72 C 330,65 296,62 262,62
-                 C 228,62 208,65 198,70 C 185,72 168,76 150,82
-                 C 136,90 120,102 100,116 Z"/>
-        <!-- ガスタンク -->
-        <path d="M 196,64 C 200,46 220,32 260,26 C 300,20 336,34 356,56
-                 C 362,64 354,72 344,70 C 322,64 292,61 262,61
-                 C 232,61 210,64 196,70 C 192,68 192,66 196,64 Z"/>
-        <!-- シート -->
-        <path d="M 155,72 C 158,62 168,56 182,56 C 192,56 198,62 196,72
-                 C 186,70 172,70 155,72 Z"/>
-        <!-- フロントフォーク -->
-        <path d="M 344,72 L 430,158 L 446,150 L 360,64 Z"/>
-        <!-- アンダーフレーム -->
-        <path d="M 345,74 C 332,80 300,86 260,88 C 220,90 185,92 158,94
-                 C 142,96 122,104 100,116 L 100,128
-                 C 120,114 142,106 160,104 C 185,101 220,99 260,97
-                 C 300,95 335,89 348,82 Z"/>
-        <!-- ライダー胴体（前傾姿勢） -->
-        <path d="M 194,64 C 196,46 208,30 224,22 C 234,16 244,20 244,32
-                 C 242,46 232,58 220,66 C 212,68 202,68 194,64 Z"/>
-        <!-- ライダー腕 -->
-        <path d="M 240,30 C 272,38 310,50 344,62 C 312,58 274,44 242,38 Z"/>
-        <!-- ヘルメット -->
-        <ellipse cx="226" cy="16" rx="21" ry="19"/>
-        <!-- バイザー（ゴールド） -->
-        <path d="M 208,14 C 210,5 242,5 244,14 C 242,20 210,20 208,14 Z"
-              fill="#C8A26A" opacity="0.55"/>
-        <!-- マフラー（ゴールド） -->
-        <path d="M 152,154 C 240,158 370,158 442,153 L 446,148
-                 C 372,153 240,153 148,149 Z" fill="#C8A26A"/>
-        <!-- ヘッドライト -->
-        <ellipse cx="444" cy="120" rx="15" ry="10"
-                 transform="rotate(12,444,120)" fill="#ffe8a0" opacity="0.9"/>
-        <ellipse cx="444" cy="120" rx="9" ry="6"
-                 transform="rotate(12,444,120)" fill="#fff" opacity="0.7"/>
-      </g>
-    </svg>
-  </div>
+<!-- ══ FORM PANEL ════════════════════════════════════ -->
+<div id="form-panel">
+  <form id="plan-form" novalidate aria-label="ルート生成フォーム">
 
-  <div id="cinema-ui">
-    <p id="cinema-tagline">下道だけの<br>バイク旅</p>
-    <p id="cinema-sub">AI Route Planner · Japan Local Roads Only</p>
-  </div>
-  <button id="skip-btn">SKIP</button>
+    <input
+      class="f-input" type="text" name="origin"
+      placeholder="出発地 — 新宿区, 東京都"
+      aria-label="出発地"
+      autocomplete="off"
+      required
+    />
+
+    <input
+      class="f-input" type="text" name="destination"
+      placeholder="目的地 — 富士吉田市, 山梨県"
+      aria-label="目的地"
+      autocomplete="off"
+      required
+    />
+
+    <div class="f-row">
+      <input
+        class="f-input" type="time" name="start_time"
+        value="08:00"
+        aria-label="出発時刻"
+      />
+      <input
+        class="f-input" type="time" name="end_time"
+        value="18:00"
+        aria-label="帰着時刻"
+      />
+    </div>
+
+    <div class="f-row">
+      <select class="f-input" name="engine_cc" aria-label="排気量">
+        <option value="125cc">125cc</option>
+        <option value="50cc">50cc</option>
+      </select>
+      <select class="f-input" name="travel_style" aria-label="旅スタイル">
+        <option value="お任せ">バランス</option>
+        <option value="風景">絶景優先</option>
+        <option value="人文">史跡優先</option>
+      </select>
+    </div>
+
+    <div class="f-toggles" role="group" aria-label="立ち寄りオプション">
+      <button type="button" class="toggle-btn active" data-key="want_meal">食事</button>
+      <button type="button" class="toggle-btn" data-key="want_gas">給油</button>
+    </div>
+
+    <button type="submit" id="submit-btn">ルートを生成</button>
+  </form>
+
+  <div class="f-loading-text" aria-live="polite">計算中...</div>
+  <div id="form-error" role="alert"></div>
 </div>
 
-<!-- ══ APP ════════════════════════════════════════════════════ -->
-<div id="app">
-
-  <!-- 日本地図SVG — 実経緯度座標変換: x=(lon-129.3)/16.7*455+12, y=(45.5-lat)/14.5*505+15 -->
-  <div id="japan-wrap">
-    <svg id="japan-svg" viewBox="0 0 480 540" width="400" height="450" aria-hidden="true">
-      <!-- 本州 -->
-      <path id="jp-honshu" d="
-        M 56,419 C 76,413 100,408 122,405 C 142,402 158,399 173,392
-        C 178,406 184,421 189,434 C 196,421 207,409 216,399
-        C 220,393 221,389 240,390 C 257,390 270,386 276,378
-        L 295,364 L 328,358 L 331,260 L 344,178 L 344,164
-        L 321,161 L 310,154
-        C 304,172 298,192 291,212 C 284,233 278,252 274,269
-        C 263,271 250,274 237,278 L 228,283
-        C 221,295 213,307 209,317 C 193,332 180,344 162,351
-        L 133,353 L 98,355 C 82,352 68,344 56,419 Z
-      "/>
-      <!-- 北海道 -->
-      <path id="jp-hokkaido" d="
-        M 331,154 L 308,115 L 312,94 L 345,77 L 354,18
-        L 378,33 L 408,55 L 444,67 L 460,91
-        L 432,108 L 395,123 L 357,143 L 331,154 Z
-      "/>
-      <!-- 四国 -->
-      <path id="jp-shikoku" d="
-        M 95,422 L 128,408 L 143,413 L 132,444 L 101,460 L 90,453 L 95,422 Z
-      "/>
-      <!-- 九州 -->
-      <path id="jp-kyushu" d="
-        M 56,419 L 39,429 L 23,446 L 28,461 L 44,506 L 68,497 L 79,455 L 56,419 Z
-      "/>
-
-      <!-- 都市マーカー -->
-      <circle cx="348" cy="97"  r="2.5" fill="rgba(200,162,106,0.6)"/>
-      <text x="355" y="101">札幌</text>
-
-      <circle cx="331" cy="258" r="2.5" fill="rgba(200,162,106,0.6)"/>
-      <text x="338" y="262">仙台</text>
-
-      <circle cx="295" cy="360" r="3"   fill="rgba(232,80,0,0.8)"/>
-      <text x="300" y="355" font-size="11" fill="rgba(232,80,0,0.85)" font-weight="700">東京</text>
-
-      <circle cx="173" cy="392" r="2.5" fill="rgba(200,162,106,0.6)"/>
-      <text x="158" y="386">大阪</text>
-
-      <circle cx="41"  cy="429" r="2.5" fill="rgba(200,162,106,0.6)"/>
-      <text x="27"  y="424">福岡</text>
-    </svg>
+<!-- ══ RESULTS PANEL ═════════════════════════════════ -->
+<aside id="results-panel" aria-hidden="true" aria-label="生成されたルート">
+  <div id="results-header">
+    <div id="results-title">走行<em>ルート</em></div>
+    <button id="close-results" aria-label="結果を閉じる">✕</button>
   </div>
-
-  <!-- 入力フォーム -->
-  <div id="form-panel">
-    <h1 class="display">下道だけの<br/><span>バイク旅</span></h1>
-
-    <form id="plan-form">
-      <div class="form-grid">
-        <div class="field full">
-          <label for="origin">出発地</label>
-          <input id="origin" type="text" name="origin"
-                 placeholder="例: 新宿区, 東京都" required />
-        </div>
-        <div class="field full">
-          <label for="destination">目的地</label>
-          <input id="destination" type="text" name="destination"
-                 placeholder="例: 富士吉田市, 山梨県" required />
-        </div>
-        <div class="field">
-          <label for="start_time">出発時刻</label>
-          <input id="start_time" type="time" name="start_time" value="08:00" required />
-        </div>
-        <div class="field">
-          <label for="end_time">帰着時刻</label>
-          <input id="end_time" type="time" name="end_time" value="18:00" required />
-        </div>
-        <div class="field">
-          <label for="engine_cc">排気量</label>
-          <select id="engine_cc" name="engine_cc">
-            <option value="125cc">125cc（原付二種）</option>
-            <option value="50cc">50cc（原付一種）</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="travel_style">旅スタイル</label>
-          <select id="travel_style" name="travel_style">
-            <option value="お任せ">バランス重視</option>
-            <option value="風景">自然・絶景優先</option>
-            <option value="人文">文化・史跡優先</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="checks">
-        <label class="check-item">
-          <input type="checkbox" name="want_meal" checked />
-          食事を含む
-        </label>
-        <label class="check-item">
-          <input type="checkbox" name="want_gas" />
-          ガソリンスタンドを含む
-        </label>
-      </div>
-
-      <button type="submit" id="submit-btn">ルートを生成</button>
-      <div id="error-banner" role="alert"></div>
-    </form>
+  <div id="stats-strip" aria-label="ルート統計"></div>
+  <div id="results-body">
+    <div id="timeline-list" role="list" aria-label="タイムライン"></div>
+    <pre id="plan-prose" aria-label="行程プラン"></pre>
   </div>
-</div>
-
-<!-- ══ LOADING ════════════════════════════════════════════════ -->
-<div id="loading" role="status" aria-live="polite">
-  <div class="loading-ring"></div>
-  <div class="loading-text">ルート計算中</div>
-  <div class="loading-step" id="loading-step">地名を解析中...</div>
-</div>
-
-<!-- ══ RESULTS ════════════════════════════════════════════════ -->
-<div id="results">
-  <div class="results-header">
-    <h2 id="results-title">走行<span>ルート</span></h2>
-    <button id="btn-reset">← 再検索</button>
-  </div>
-  <div class="results-inner">
-    <div class="stats-band" id="stats-row"></div>
-    <div id="map-container"></div>
-    <table class="timeline-table" aria-label="行程タイムライン">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>地点名</th>
-          <th>種別</th>
-          <th>到着</th>
-          <th>出発</th>
-          <th>滞在</th>
-          <th>区間</th>
-        </tr>
-      </thead>
-      <tbody id="timeline-body"></tbody>
-    </table>
-    <pre id="plan-text"></pre>
-  </div>
-</div>
+</aside>
 
 
 <script>
-// ════════════════════════════════════════════════════════════════
-// 1. CINEMA — GSAPタイムライン（2秒）
-// ════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+// 1.  MAP SETUP
+// ══════════════════════════════════════════════════════
 
-let cinemaActive = true;
+const map = L.map('map', {
+  center: [36.5, 137.5],
+  zoom: 6,
+  zoomControl: true,
+  attributionControl: true,
+});
 
-// prefers-reduced-motion: モーション無効時はシネマをスキップ
-const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Zoom to bottom-right so it doesn't overlap the form
+map.zoomControl.setPosition('bottomright');
 
-function startCinema() {
-  if (prefersReducedMotion) {
-    endCinema();
-    return;
+L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    maxZoom: 19,
+  }
+).addTo(map);
+
+let routeLine   = null;
+let spotMarkers = [];
+
+function clearMapOverlays() {
+  if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+  spotMarkers.forEach(m => map.removeLayer(m));
+  spotMarkers = [];
+}
+
+function drawRoute(geometry, spots) {
+  clearMapOverlays();
+
+  if (geometry && geometry.length > 0) {
+    // geometry = [[lon, lat], ...] — Leaflet expects [lat, lon]
+    const latLngs = geometry.map(([lon, lat]) => [lat, lon]);
+    routeLine = L.polyline(latLngs, {
+      color:    '#E85000',
+      weight:   4,
+      opacity:  0.92,
+      lineJoin: 'round',
+      lineCap:  'round',
+    }).addTo(map);
+    map.fitBounds(routeLine.getBounds(), { padding: [70, 70] });
   }
 
-  const tl = gsap.timeline({ onComplete: endCinema });
-
-  // バイク横断: 2.0秒, power3.out（速く入って自然に抜ける = 疾走感）
-  tl.fromTo('#cin-moto',
-    { x: '-130vw' },
-    { x: '130vw', duration: 2.0, ease: 'power3.out' },
-    0
-  );
-
-  // タイトル: バイクが画面に差し掛かる頃にフラッシュイン
-  tl.fromTo('#cinema-tagline',
-    { opacity: 0, y: 8 },
-    { opacity: 1, y: 0, duration: 0.35, ease: 'expo.out' },
-    0.25
-  );
-
-  // サブテキスト
-  tl.fromTo('#cinema-sub',
-    { opacity: 0 },
-    { opacity: 1, duration: 0.3, ease: 'power2.out' },
-    0.45
-  );
-
-  // テキスト退場
-  tl.to(['#cinema-tagline', '#cinema-sub'],
-    { opacity: 0, duration: 0.3, ease: 'power2.in' },
-    1.35
-  );
-
-  // シネマ全体フェードアウト
-  tl.to('#cinema',
-    { opacity: 0, duration: 0.4, ease: 'power2.in' },
-    1.75
-  );
+  (spots || []).forEach(spot => {
+    if (!spot.lat || !spot.lon) return;
+    const icon = L.divIcon({
+      className: '',
+      html: '<div style="width:8px;height:8px;background:#C8A26A;border:1.5px solid #E85000;border-radius:50%;"></div>',
+      iconSize:   [8, 8],
+      iconAnchor: [4, 4],
+    });
+    const m = L.marker([spot.lat, spot.lon], { icon });
+    m.bindPopup(
+      `<span style="font-family:Rajdhani,sans-serif;font-weight:700;font-size:13px">${escapeHtml(spot.name)}</span>`
+    );
+    m.addTo(map);
+    spotMarkers.push(m);
+  });
 }
 
-function endCinema() {
-  cinemaActive = false;
-  document.getElementById('cinema').style.display = 'none';
-  transitionToApp();
-}
 
-// ════════════════════════════════════════════════════════════════
-// 2. SKIP
-// ════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+// 2.  ENTRANCE ANIMATION
+// ══════════════════════════════════════════════════════
 
-document.getElementById('skip-btn').addEventListener('click', () => {
-  if (!cinemaActive) return;
-  gsap.killTweensOf(['#cin-moto', '#cinema-tagline', '#cinema-sub', '#cinema']);
-  cinemaActive = false;
-  gsap.to('#cinema', {
-    opacity: 0, duration: 0.25,
-    onComplete: () => {
-      document.getElementById('cinema').style.display = 'none';
-      transitionToApp();
-    }
+const prefersReducedMotion =
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+window.addEventListener('load', () => {
+  const panel = document.getElementById('form-panel');
+  if (prefersReducedMotion) {
+    gsap.set(panel, { opacity: 1, y: 0 });
+    return;
+  }
+  gsap.to(panel, {
+    opacity:  1,
+    y:        0,
+    duration: 0.60,
+    ease:     'expo.out',
+    delay:    0.25,
   });
 });
 
-// ════════════════════════════════════════════════════════════════
-// 3. TRANSITION: Cinema → App
-// ════════════════════════════════════════════════════════════════
 
-function transitionToApp() {
-  const app = document.getElementById('app');
-  app.style.display = 'flex';
-  document.body.style.overflow = 'hidden';
+// ══════════════════════════════════════════════════════
+// 3.  TOGGLE BUTTONS (食事 / 給油)
+// ══════════════════════════════════════════════════════
 
-  gsap.to(app, { opacity: 1, duration: 0.5, ease: 'power2.out' });
-  gsap.fromTo('#form-panel',
-    { x: -36, opacity: 0 },
-    { x: 0, opacity: 1, duration: 0.7, delay: 0.2, ease: 'power3.out' }
-  );
-}
+const toggleState = { want_meal: true, want_gas: false };
 
-window.addEventListener('load', startCinema);
+document.querySelectorAll('.toggle-btn').forEach(btn => {
+  const key = btn.dataset.key;
+  btn.setAttribute('aria-pressed', String(toggleState[key]));
 
-// ════════════════════════════════════════════════════════════════
-// 4. FORM SUBMIT
-// ════════════════════════════════════════════════════════════════
+  btn.addEventListener('click', () => {
+    toggleState[key] = !toggleState[key];
+    btn.classList.toggle('active', toggleState[key]);
+    btn.setAttribute('aria-pressed', String(toggleState[key]));
+  });
+});
 
-const loadingSteps = [
-  '地名を解析中...',
-  '下道ルートを計算中...',
-  '時間配分を最適化中...',
-  '沿道スポットを検索中...',
-  '行程プランを生成中...',
+
+// ══════════════════════════════════════════════════════
+// 4.  STATUS BAR CYCLING
+// ══════════════════════════════════════════════════════
+
+const LOADING_STEPS = [
+  '地名を解析中',
+  '下道ルートを計算中',
+  '時間配分を最適化中',
+  '沿道スポットを検索中',
+  '行程プランを生成中',
 ];
 
-function cycleLoadingText() {
+let loadingTimer = null;
+
+function setStatus(text) {
+  const el = document.getElementById('status-bar');
+  el.textContent = text;
+  el.classList.toggle('visible', Boolean(text));
+}
+
+function startLoadingCycle() {
   let i = 0;
-  const el = document.getElementById('loading-step');
-  return setInterval(() => {
-    el.textContent = loadingSteps[i++ % loadingSteps.length];
+  setStatus(LOADING_STEPS[i]);
+  loadingTimer = setInterval(() => {
+    i = (i + 1) % LOADING_STEPS.length;
+    setStatus(LOADING_STEPS[i]);
   }, 2200);
 }
 
+function stopLoadingCycle() {
+  clearInterval(loadingTimer);
+  loadingTimer = null;
+  setStatus('');
+}
+
+
+// ══════════════════════════════════════════════════════
+// 5.  ERROR HELPERS
+// ══════════════════════════════════════════════════════
+
+function showError(msg) {
+  const el = document.getElementById('form-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+  gsap.to(el, { opacity: 1, y: 0, duration: 0.22, ease: 'power2.out' });
+}
+
+function clearError() {
+  const el = document.getElementById('form-error');
+  gsap.to(el, {
+    opacity: 0, y: -3, duration: 0.18, ease: 'power2.in',
+    onComplete: () => { el.style.display = 'none'; el.textContent = ''; },
+  });
+}
+
+
+// ══════════════════════════════════════════════════════
+// 6.  FORM SUBMIT
+// ══════════════════════════════════════════════════════
+
 document.getElementById('plan-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const data = Object.fromEntries(new FormData(e.target).entries());
+  clearError();
+
+  const fd          = new FormData(e.target);
+  const origin      = fd.get('origin').trim();
+  const destination = fd.get('destination').trim();
+
+  if (!origin) {
+    showError('出発地を入力してください');
+    e.target.querySelector('[name="origin"]').focus();
+    return;
+  }
+  if (!destination) {
+    showError('目的地を入力してください');
+    e.target.querySelector('[name="destination"]').focus();
+    return;
+  }
 
   const payload = {
-    origin:       data.origin,
-    destination:  data.destination,
-    start_time:   data.start_time,
-    end_time:     data.end_time,
-    engine_cc:    data.engine_cc,
-    want_meal:    !!data.want_meal,
-    want_gas:     !!data.want_gas,
-    travel_style: data.travel_style,
+    origin,
+    destination,
+    start_time:   fd.get('start_time'),
+    end_time:     fd.get('end_time'),
+    engine_cc:    fd.get('engine_cc'),
+    want_meal:    toggleState.want_meal,
+    want_gas:     toggleState.want_gas,
+    travel_style: fd.get('travel_style'),
   };
 
   document.getElementById('submit-btn').disabled = true;
-  document.getElementById('error-banner').classList.remove('active');
-  document.getElementById('loading').classList.add('active');
-  const timer = cycleLoadingText();
+  document.getElementById('form-panel').classList.add('loading');
+  startLoadingCycle();
 
   try {
     const resp = await fetch('/api/plan', {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body:    JSON.stringify(payload),
     });
-    if (!resp.ok) throw new Error((await resp.json()).detail || 'サーバーエラーが発生しました');
-    showResults(await resp.json(), payload);
+
+    if (!resp.ok) {
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(errBody.detail || `サーバーエラー (${resp.status})`);
+    }
+
+    const result = await resp.json();
+    showResults(result, payload);
+
   } catch (err) {
-    document.getElementById('error-banner').textContent = err.message;
-    document.getElementById('error-banner').classList.add('active');
+    showError(err.message || '通信エラーが発生しました');
   } finally {
-    clearInterval(timer);
-    document.getElementById('loading').classList.remove('active');
+    stopLoadingCycle();
+    document.getElementById('form-panel').classList.remove('loading');
     document.getElementById('submit-btn').disabled = false;
   }
 });
 
-// ════════════════════════════════════════════════════════════════
-// 5. RESULTS
-// ════════════════════════════════════════════════════════════════
 
-let resultMap = null;
+// ══════════════════════════════════════════════════════
+// 7.  RENDER RESULTS
+// ══════════════════════════════════════════════════════
+
+const CAT_LABELS = {
+  restaurant:  'レストラン',
+  cafe:        'カフェ',
+  gas_station: '給油所',
+  viewpoint:   '展望台',
+  museum:      '博物館',
+  attraction:  '観光地',
+  park:        '公園',
+  shrine:      '神社',
+  temple:      '寺院',
+};
 
 function showResults(result, req) {
-  document.getElementById('app').style.display = 'none';
-  document.body.style.overflow = 'auto';
-  document.getElementById('results').classList.add('active');
+  drawRoute(result.geometry, result.spots_for_map);
 
+  // Header title
   document.getElementById('results-title').innerHTML =
-    `${req.origin} → <span>${req.destination}</span>`;
+    `${escapeHtml(req.origin)} <em>→</em> ${escapeHtml(req.destination)}`;
 
-  const b = result.time_budget;
-  document.getElementById('stats-row').innerHTML = [
-    { label: '総距離',   value: result.distance_km, unit: 'km'   },
-    { label: '走行時間', value: b.riding_min,         unit: 'min'  },
-    { label: 'スポット', value: b.n_spots,            unit: '箇所' },
-    { label: '食事',     value: b.n_meals,            unit: '回'   },
+  // Stats
+  const budget = result.time_budget || {};
+  document.getElementById('stats-strip').innerHTML = [
+    { lbl: '総距離',   val: result.distance_km ?? '—', unit: 'km'   },
+    { lbl: '走行時間', val: budget.riding_min   ?? '—', unit: 'min'  },
+    { lbl: 'スポット', val: budget.n_spots      ?? '—', unit: '箇所' },
+    { lbl: '食事',     val: budget.n_meals      ?? '—', unit: '回'   },
   ].map(s => `
-    <div class="stat-item">
-      <span class="stat-label">${s.label}</span>
-      <span class="stat-value">${s.value}</span>
-      <span class="stat-unit">${s.unit}</span>
+    <div class="stat-cell">
+      <span class="stat-lbl">${s.lbl}</span>
+      <span class="stat-val">${s.val}<span class="stat-unit"> ${s.unit}</span></span>
     </div>
   `).join('');
 
-  const catLabel = {
-    restaurant:  'レストラン',
-    cafe:        'カフェ',
-    gas_station: 'ガソリンST',
-    viewpoint:   '展望台',
-    museum:      '博物館',
-    attraction:  '観光地',
-    park:        '公園',
-  };
-
-  document.getElementById('timeline-body').innerHTML =
-    result.timeline.map(row => `
-      <tr>
-        <td style="color:var(--muted);font-size:11px">${row.order}</td>
-        <td>${row.name}</td>
-        <td><span class="cat-badge cat-${row.category}">${catLabel[row.category] || row.category}</span></td>
-        <td>${row.arrive}</td>
-        <td>${row.depart}</td>
-        <td style="color:var(--muted)">${row.stay_min}分</td>
-        <td style="color:var(--muted)">${row.dist_km}km</td>
-      </tr>
-    `).join('') ||
-    '<tr><td colspan="7" style="color:var(--muted);padding:18px 12px">スポットが見つかりませんでした</td></tr>';
-
-  document.getElementById('plan-text').textContent = result.plan_text;
-  renderResultMap(result);
-
-  if (!prefersReducedMotion) {
-    gsap.fromTo('#results',
-      { opacity: 0, y: 16 },
-      { opacity: 1, y: 0, duration: 0.55, ease: 'power3.out' }
-    );
+  // Timeline
+  const rows = result.timeline || [];
+  if (rows.length > 0) {
+    document.getElementById('timeline-list').innerHTML = rows.map(row => {
+      const catKey   = row.category || 'attraction';
+      const catText  = CAT_LABELS[catKey] || catKey;
+      return `
+        <div class="tl-row" role="listitem">
+          <div class="tl-num">${row.order}</div>
+          <div>
+            <div class="tl-name">${escapeHtml(row.name)}</div>
+            <div class="tl-meta">
+              ${row.stay_min}分滞在 · ${row.dist_km}km
+              <br><span class="cat-badge cat-${catKey}">${catText}</span>
+            </div>
+          </div>
+          <div class="tl-time">
+            ${row.arrive}
+            <span class="tl-depart">→ ${row.depart}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } else {
+    document.getElementById('timeline-list').innerHTML =
+      '<p style="color:var(--muted);font-size:12px;padding:8px 0">スポットが見つかりませんでした</p>';
   }
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  document.getElementById('plan-prose').textContent = result.plan_text || '';
+
+  openResultsPanel();
 }
 
-function renderResultMap(result) {
-  const container = document.getElementById('map-container');
-  if (resultMap) { resultMap.remove(); resultMap = null; }
-  container.innerHTML = '';
 
-  resultMap = L.map(container, { zoomControl: true, attributionControl: false });
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 18,
-  }).addTo(resultMap);
+// ══════════════════════════════════════════════════════
+// 8.  PANEL OPEN / CLOSE
+// ══════════════════════════════════════════════════════
 
-  if (result.geometry && result.geometry.length) {
-    const ll = result.geometry.map(([lon, lat]) => [lat, lon]);
-    const line = L.polyline(ll, {
-      color: '#E85000', weight: 4, opacity: 0.9,
-    }).addTo(resultMap);
-    resultMap.fitBounds(line.getBounds(), { padding: [40, 40] });
+function isMobile() { return window.innerWidth <= 640; }
+
+function openResultsPanel() {
+  const panel = document.getElementById('results-panel');
+  panel.setAttribute('aria-hidden', 'false');
+
+  if (prefersReducedMotion) {
+    gsap.set(panel, { x: 0, y: 0 });
+    setTimeout(() => map.invalidateSize(), 50);
+    return;
   }
 
-  (result.spots_for_map || []).forEach(spot => {
-    L.marker([spot.lat, spot.lon], {
-      icon: L.divIcon({
-        className: '',
-        html: '<div style="background:#C8A26A;border:2px solid #E85000;border-radius:50%;width:10px;height:10px;"></div>',
-        iconSize: [10, 10], iconAnchor: [5, 5],
-      })
-    }).addTo(resultMap).bindPopup(`<b>${spot.name}</b><br/>${spot.category}`);
+  if (isMobile()) {
+    gsap.fromTo(panel,
+      { y: '100%', x: 0 },
+      { y: 0, duration: 0.55, ease: 'expo.out',
+        onComplete: () => map.invalidateSize() }
+    );
+  } else {
+    gsap.fromTo(panel,
+      { x: '100%', y: 0 },
+      { x: 0, duration: 0.55, ease: 'expo.out',
+        onComplete: () => map.invalidateSize() }
+    );
+  }
+}
+
+function closeResultsPanel() {
+  const panel = document.getElementById('results-panel');
+
+  if (prefersReducedMotion) {
+    gsap.set(panel, {
+      x: isMobile() ? 0    : '100%',
+      y: isMobile() ? '100%' : 0,
+    });
+    panel.setAttribute('aria-hidden', 'true');
+    clearMapOverlays();
+    map.invalidateSize();
+    return;
+  }
+
+  const animProps = isMobile()
+    ? { y: '100%', x: 0 }
+    : { x: '100%', y: 0 };
+
+  gsap.to(panel, {
+    ...animProps,
+    duration: 0.38,
+    ease: 'power3.in',
+    onComplete: () => {
+      panel.setAttribute('aria-hidden', 'true');
+      clearMapOverlays();
+      map.invalidateSize();
+    },
   });
 }
 
-// ════════════════════════════════════════════════════════════════
-// 6. RESET
-// ════════════════════════════════════════════════════════════════
+document.getElementById('close-results')
+  .addEventListener('click', closeResultsPanel);
 
-document.getElementById('btn-reset').addEventListener('click', () => {
-  document.getElementById('results').classList.remove('active');
-  document.body.style.overflow = 'hidden';
-  const app = document.getElementById('app');
-  app.style.display = 'flex';
-  gsap.set('#form-panel', { x: 0, opacity: 1 });
-  window.scrollTo({ top: 0 });
-});
+
+// ══════════════════════════════════════════════════════
+// 9.  XSS HELPER
+// ══════════════════════════════════════════════════════
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 </script>
 </body>
 </html>
